@@ -1,10 +1,8 @@
 package kubemock
 
 import (
-	"bytes"
 	"fmt"
 	"io"
-	"sync"
 
 	"helm.sh/helm/v4/pkg/kube"
 	kubefake "helm.sh/helm/v4/pkg/kube/fake"
@@ -15,9 +13,6 @@ import (
 // stores the complete release, while resource application is recorded only.
 type Recorder struct {
 	*kubefake.PrintingKubeClient
-
-	mu        sync.Mutex
-	manifests [][]byte
 }
 
 func NewRecorder() *Recorder {
@@ -28,30 +23,16 @@ func NewRecorder() *Recorder {
 }
 
 func (r *Recorder) Build(reader io.Reader, _ bool) (kube.ResourceList, error) {
-	data, err := io.ReadAll(reader)
+	_, err := io.Copy(io.Discard, reader)
 	if err != nil {
 		return nil, fmt.Errorf("read rendered resources: %w", err)
 	}
-	r.mu.Lock()
-	r.manifests = append(r.manifests, bytes.Clone(data))
-	r.mu.Unlock()
 
 	// An empty list avoids Helm's live-cluster ownership checks. The complete
 	// rendered manifest remains in the release and is what Helm stores.
-	return []*resource.Info{}, nil
+	return make([]*resource.Info, 0), nil
 }
 
 func (r *Recorder) BuildTable(reader io.Reader, validate bool) (kube.ResourceList, error) {
 	return r.Build(reader, validate)
-}
-
-func (r *Recorder) RecordedBytes() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	total := 0
-	for _, manifest := range r.manifests {
-		total += len(manifest)
-	}
-	return total
 }

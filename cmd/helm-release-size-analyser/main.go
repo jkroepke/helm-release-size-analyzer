@@ -7,16 +7,23 @@ import (
 	"os/signal"
 	"syscall"
 
-	"helm-release-size-analyser/internal/cli"
+	"github.com/jkroepke/helm-release-size-analyser/internal/cli"
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	cmd := cli.NewRootCommand(os.Stdout, os.Stderr)
 	if err := cmd.ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(cli.ExitCode(err))
+
+		return cli.ExitCode(err)
 	}
+
+	return 0
 }

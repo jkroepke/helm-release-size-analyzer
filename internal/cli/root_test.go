@@ -1,4 +1,4 @@
-package cli
+package cli_test
 
 import (
 	"bytes"
@@ -7,14 +7,18 @@ import (
 	"path/filepath"
 	"testing"
 
-	"helm-release-size-analyser/internal/analyse"
+	"github.com/jkroepke/helm-release-size-analyser/internal/analyse"
+	"github.com/jkroepke/helm-release-size-analyser/internal/cli"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAnalyseCommandJSON(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr bytes.Buffer
-	cmd := NewRootCommand(&stdout, &stderr)
+
+	cmd := cli.NewRootCommand(&stdout, &stderr)
 	chartPath := filepath.Join("..", "helminstall", "testdata", "basic")
 	cmd.SetArgs([]string{
 		"analyse", chartPath,
@@ -23,21 +27,73 @@ func TestAnalyseCommandJSON(t *testing.T) {
 		"--output", "json",
 	})
 
-	if err := cmd.ExecuteContext(context.Background()); err != nil {
-		t.Fatalf("ExecuteContext() error = %v; stderr = %s", err, stderr.String())
-	}
+	err := cmd.ExecuteContext(context.Background())
+	require.NoError(t, err, stderr.String())
 
 	var got analyse.Report
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("decode report: %v\noutput: %s", err, stdout.String())
+
+	err = json.Unmarshal(stdout.Bytes(), &got)
+	require.NoError(t, err, stdout.String())
+	assert.NotZero(t, got.TotalBytes)
+	require.NotEmpty(t, got.Properties)
+	assert.Equal(t, "name", got.Properties[0].Name)
+}
+
+func TestAnalyseCommandRejectsYAML(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr bytes.Buffer
+
+	cmd := cli.NewRootCommand(&stdout, &stderr)
+	chartPath := filepath.Join("..", "helminstall", "testdata", "basic")
+	cmd.SetArgs([]string{"analyse", chartPath, "--output", "yaml"})
+
+	err := cmd.ExecuteContext(context.Background())
+	require.EqualError(t, err, "invalid configuration: output must be one of table or json")
+}
+
+func TestReleaseJSONCommand(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr bytes.Buffer
+
+	cmd := cli.NewRootCommand(&stdout, &stderr)
+	chartPath := filepath.Join("..", "helminstall", "testdata", "basic")
+	cmd.SetArgs([]string{
+		"release-json", chartPath,
+		"--release-name", "raw-release",
+		"--set", "message=from-release-json",
+	})
+
+	err := cmd.ExecuteContext(context.Background())
+	require.NoError(t, err, stderr.String())
+
+	var got struct {
+		Name   string         `json:"name"`
+		Config map[string]any `json:"config"`
+		Info   struct {
+			Status string `json:"status"`
+		} `json:"info"`
 	}
-	if got.ReleaseName != "cli-test" {
-		t.Fatalf("release name = %q, want cli-test", got.ReleaseName)
-	}
-	if got.SecretName != "sh.helm.release.v1.cli-test.v1" {
-		t.Fatalf("secret name = %q", got.SecretName)
-	}
-	if got.Metrics.HelmStoragePayloadBytes == 0 {
-		t.Fatal("payload bytes are zero")
-	}
+
+	err = json.Unmarshal(stdout.Bytes(), &got)
+	require.NoError(t, err, stdout.String())
+	assert.Equal(t, "raw-release", got.Name)
+	assert.Equal(t, "from-release-json", got.Config["message"])
+	assert.Equal(t, "deployed", got.Info.Status)
+}
+
+func TestVersionCommand(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr bytes.Buffer
+
+	cmd := cli.NewRootCommand(&stdout, &stderr)
+	cmd.SetArgs([]string{"--version"})
+
+	err := cmd.ExecuteContext(context.Background())
+	require.NoError(t, err, stderr.String())
+
+	want := "helm-release-size-analyser version dev (revision: unknown, branch: unknown, built: unknown)\n"
+	assert.Equal(t, want, stdout.String())
 }

@@ -6,9 +6,8 @@ import (
 	"io"
 	"log/slog"
 
-	"helm-release-size-analyser/internal/config"
-	"helm-release-size-analyser/internal/kubemock"
-
+	"github.com/jkroepke/helm-release-size-analyser/internal/config"
+	"github.com/jkroepke/helm-release-size-analyser/internal/kubemock"
 	"helm.sh/helm/v4/pkg/action"
 	"helm.sh/helm/v4/pkg/chart"
 	"helm.sh/helm/v4/pkg/chart/common"
@@ -25,9 +24,7 @@ import (
 )
 
 type Result struct {
-	Release       release.Accessor
-	Secret        *corev1.Secret
-	RecordedBytes int
+	Secret *corev1.Secret
 }
 
 func Install(ctx context.Context, chartPath string, cfg config.Config, logger *slog.Logger) (Result, error) {
@@ -35,6 +32,7 @@ func Install(ctx context.Context, chartPath string, cfg config.Config, logger *s
 	if err != nil {
 		return Result{}, fmt.Errorf("load chart %q: %w", chartPath, err)
 	}
+
 	chartAccessor, err := chart.NewAccessor(chrt)
 	if err != nil {
 		return Result{}, fmt.Errorf("inspect chart %q: %w", chartPath, err)
@@ -46,6 +44,7 @@ func Install(ctx context.Context, chartPath string, cfg config.Config, logger *s
 		StringValues: cfg.SetStrings,
 		FileValues:   cfg.SetFiles,
 	}
+
 	mergedValues, err := valueOptions.MergeValues(getter.Providers{})
 	if err != nil {
 		return Result{}, fmt.Errorf("load values: %w", err)
@@ -56,8 +55,8 @@ func Install(ctx context.Context, chartPath string, cfg config.Config, logger *s
 	}
 
 	kubeClient := kubemock.NewRecorder()
-	clientset := fake.NewClientset()
-	secretDriver := driver.NewSecrets(clientset.CoreV1().Secrets(cfg.Namespace))
+	clientSet := fake.NewSimpleClientset()
+	secretDriver := driver.NewSecrets(clientSet.CoreV1().Secrets(cfg.Namespace))
 	secretDriver.SetLogger(logger.Handler())
 
 	actionConfig := action.NewConfiguration(action.ConfigurationSetLogger(logger.Handler()))
@@ -78,24 +77,24 @@ func Install(ctx context.Context, chartPath string, cfg config.Config, logger *s
 	if err != nil {
 		return Result{}, fmt.Errorf("install release: %w", err)
 	}
+
 	accessor, err := release.NewAccessor(installed)
 	if err != nil {
 		return Result{}, fmt.Errorf("inspect installed release: %w", err)
 	}
 
-	secrets, err := clientset.CoreV1().Secrets(cfg.Namespace).List(ctx, metav1.ListOptions{
+	secrets, err := clientSet.CoreV1().Secrets(cfg.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("owner=helm,name=%s,version=%d", accessor.Name(), accessor.Version()),
 	})
 	if err != nil {
 		return Result{}, fmt.Errorf("list release secrets: %w", err)
 	}
+
 	if len(secrets.Items) != 1 {
-		return Result{}, fmt.Errorf("expected one release secret, found %d", len(secrets.Items))
+		return Result{}, fmt.Errorf("%w: expected one, found %d", errUnexpectedSecretCount, len(secrets.Items))
 	}
 
 	return Result{
-		Release:       accessor,
-		Secret:        secrets.Items[0].DeepCopy(),
-		RecordedBytes: kubeClient.RecordedBytes(),
+		Secret: secrets.Items[0].DeepCopy(),
 	}, nil
 }

@@ -11,7 +11,7 @@ The binary must:
 3. direct chart resource operations to an isolated in-memory Kubernetes substitute;
 4. persist the release through Helm's real Secret storage driver into an in-memory Kubernetes client;
 5. retrieve the resulting release Secret rather than reconstructing it independently;
-6. report its size and the parts of the release that contribute to it;
+6. decode the persisted release JSON and report its exact total size and the exact size of each top-level property;
 7. never contact or mutate a user's Kubernetes cluster.
 
 The first implementation should target Helm 4. Helm 4 is the current stable major version, already uses `log/slog` internally, and has breaking SDK changes compared with Helm 3. Pin an exact Helm minor version in `go.mod`; do not attempt to support both major versions behind one implementation.
@@ -78,8 +78,8 @@ Other candidates are weaker defaults:
    - avoid a real `RESTClientGetter` unless a supported chart feature requires it.
 8. The adapter creates `action.Install`, sets release name and namespace, disables waiting and atomic behavior, and executes the context-aware install path.
 9. The Secret collector lists the fake client's Secrets by Helm ownership/name/revision labels, validates the result, and returns a deep copy.
-10. The analyser computes metrics from both the Secret and returned Helm release.
-11. The renderer writes the selected output format to stdout. Logs and diagnostics go to stderr.
+10. The analyser decodes the release JSON from the persisted Secret and measures those exact bytes. It does not analyse the SDK-returned release object.
+11. The renderer writes table or JSON output to stdout. Logs and diagnostics go to stderr.
 
 Every component must accept `context.Context`. Cancellation should stop chart acquisition, installation, and output work.
 
@@ -95,43 +95,19 @@ The install should be a real Helm action, but its supported semantics must be de
 - default Kubernetes capabilities must be explicit and reported in the result because `.Capabilities` can change rendered output and therefore release size. Later flags may select a Kubernetes version and API-version set.
 - CRDs should be included in the release exactly as Helm normally records them, while their mock application is recorded without pretending to establish a real API.
 
-The report must include warnings when a chart uses an unsupported or simulated feature. Silent divergence would make the size result difficult to trust.
+The analyser reports only sizes from the release JSON actually persisted by Helm's Secret driver. It does not add warnings or estimates derived from the simulated resource client.
 
 ## 5. Analysis model
 
-Do not define “release size” as a single ambiguous number. Report these metrics with precise names:
+Release size is the byte length of the exact JSON obtained by decoding the payload in the Secret persisted by Helm's Secret driver. The report contains:
 
-| Metric | Meaning |
+| Field | Meaning |
 | --- | --- |
-| Helm storage payload bytes | Length of `Secret.data["release"]` as stored by the Helm Secret driver |
-| Secret data bytes | Sum of all raw values in `Secret.data` |
-| Serialized Secret JSON bytes | Length of a canonical JSON serialization of the complete Secret object; useful as a wire/storage approximation |
-| Decoded release bytes | Size after reversing Helm's outer storage encoding |
-| Uncompressed release bytes | Size after decompression, before decoding the release structure where applicable |
-| Chart contribution | Archived chart metadata, templates, files, dependencies, and values attributable from the release |
-| Manifest contribution | Rendered manifest size, with per-kind and per-resource breakdown |
-| Values contribution | Computed and user-supplied values size |
-| Hooks and notes contribution | Stored hook definitions and notes size |
+| `total_bytes` | Length of the complete decoded release JSON, including outer braces and all JSON syntax |
+| `properties[].name` | Decoded name of a top-level release JSON property |
+| `properties[].bytes` | Exact byte span of that property in the persisted JSON, including its encoded key, value, whitespace, and delimiter comma |
 
-Helm's exact encode/decode format is an implementation detail that may change across versions. Reuse Helm's supported decoding path where available, isolate any format-aware inspection behind a versioned interface, and keep the original Secret as the measurement authority.
-
-Kubernetes limits Secret size, but the client-go fake does not enforce API-server admission limits. The analyser must therefore apply its own configurable thresholds and clearly label them as policy checks. Recommended default statuses are:
-
-- `ok`: below 80% of the configured limit;
-- `warning`: 80–100%;
-- `error`: above the configured limit.
-
-The exit-code policy should be separate from rendering. For example, `--fail-on warning|error|never` can control CI behavior without changing the report.
-
-For useful optimization guidance, rank at least:
-
-- chart files by original and stored size;
-- subcharts by contribution;
-- rendered resources by manifest bytes;
-- values sections by encoded size;
-- duplicated content candidates.
-
-Attribution totals will not necessarily sum exactly to the final Secret because serialization metadata, compression, and cross-content compression effects are non-additive. The report must expose an `unattributed/encoding overhead` category and avoid implying false precision.
+Property order matches the persisted JSON. Outer object braces contribute to `total_bytes` only. Values are never re-encoded for measurement, so escaped characters, spaces, quotes, keys, commas, and colons retain their actual stored size.
 
 ## 6. CLI design with Cobra and Viper
 
@@ -152,9 +128,7 @@ Suggested initial flags:
 | `--kube-version` | Capabilities used during rendering |
 | `--api-versions` | Additional simulated APIs |
 | `--include-crds` | Match Helm install behavior explicitly |
-| `--limit-bytes` | Policy threshold used by the analyser |
-| `--fail-on` | CI exit policy |
-| `-o`, `--output` | `table`, `json`, or `yaml` |
+| `-o`, `--output` | `table` or `json` |
 | `--config` | Explicit configuration file |
 | `--log-level` | `debug`, `info`, `warn`, or `error` |
 | `--log-format` | `text` or `json` |
@@ -168,7 +142,7 @@ Viper's documented precedence is explicit `Set`, flags, environment, config file
 Create one logger at the composition root and inject it. Do not use global logger mutation.
 
 - Text logs are the human default; JSON logs are suitable for CI.
-- Logs always go to stderr so JSON/YAML reports on stdout remain machine-readable.
+- Logs always go to stderr so JSON reports on stdout remain machine-readable.
 - Add stable attributes such as `component`, `chart`, `release`, and `namespace` at component boundaries.
 - Pass the logger's handler into Helm 4's configuration so Helm and application messages share level and format policy.
 - Never log rendered Secret values or complete values maps. Log sizes, keys, paths, and object identities only.
@@ -187,7 +161,7 @@ internal/helminstall/             Helm action adapter and configuration assembly
 internal/kubemock/                kube.Interface recorder and fake client composition
 internal/releasesecret/           Secret lookup, validation, and decoding boundary
 internal/analyse/                 metrics, attribution, thresholds, result model
-internal/report/                  table/JSON/YAML rendering
+internal/report/                  table/JSON rendering
 internal/buildinfo/               version metadata
 ```
 
@@ -208,7 +182,6 @@ Use stable categories and map them at the CLI boundary:
 | --- | --- |
 | 0 | Analysis completed and configured policy passed |
 | 1 | Invalid input, chart/values failure, Helm failure, mock incompatibility, or internal error |
-| 2 | Analysis completed but the configured size policy failed |
 
 The report may still be emitted for a policy failure. Do not emit a partial machine-readable report for an operational failure unless the schema explicitly marks it incomplete.
 
@@ -221,14 +194,13 @@ Errors from Helm should preserve their cause. Add the release phase and relevant
 - configuration precedence and validation with fresh Viper instances;
 - Cobra argument/flag behavior using injected streams;
 - Secret selection by labels, name, namespace, and revision;
-- exact byte metrics from fixed Secret fixtures;
-- threshold boundary behavior and exit mapping;
+- exact byte metrics from fixed release JSON fixtures;
 - deterministic report ordering and golden output;
 - no secrets or values appearing in logs.
 
 ### Helm adapter tests
 
-Use small fixture charts to verify that a real `action.Install` writes a Helm release Secret into the fake client. Cover dependencies, CRDs, hooks rejected/disabled, large files, binary files, schema errors, and unsupported lookup behavior. Assert both the returned Helm release and captured Secret identity.
+Use small fixture charts to verify that a real `action.Install` writes a Helm release Secret into the fake client. Cover dependencies, CRDs, hooks rejected/disabled, large files, binary files, schema errors, and unsupported lookup behavior. Assert the captured Secret identity and decoded JSON.
 
 ### Integration tests
 
@@ -251,10 +223,9 @@ Tests should prove:
 3. Implement the minimal chart-resource `kube.Interface` recorder needed by install.
 4. Support local charts and values with waiting and hooks disabled.
 5. Add exact Secret metrics and deterministic JSON output.
-6. Add contribution analysis and human-readable table output.
-7. Add unsupported-feature detection and clear warnings.
-8. Add `envtest` comparison tests.
-9. Consider remote/OCI chart sources only after the local analysis contract is stable.
+6. Add exact top-level property analysis and human-readable table output.
+7. Add `envtest` comparison tests.
+8. Consider remote/OCI chart sources only after the local analysis contract is stable.
 
 The critical feasibility spike is steps 2–3. It should be completed before investing in detailed reports: Helm SDK interfaces can change between minor versions, and the project depends on keeping the production Secret encoder while replacing the resource client safely.
 
