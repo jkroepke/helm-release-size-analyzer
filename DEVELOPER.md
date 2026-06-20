@@ -26,16 +26,16 @@ a cluster.
 | `internal/helminstall` | Chart loading, values merging, Helm action setup, installation, and Secret selection |
 | `internal/kubemock` | Network-free implementation of Helm's chart-resource client |
 | `internal/releasesecret` | Helm release payload decoding and validation |
-| `internal/analyse` | Exact byte measurement and the stable report model |
-| `internal/report` | Table and JSON rendering |
+| `internal/analyze` | Exact byte measurement and the stable report model |
+| `internal/report` | Table, JSON, and loopback web report rendering |
 | `internal/version` | Build metadata populated by release tooling |
 
 Keep the command package thin. Helm and Kubernetes types belong at adapter
-boundaries; the report contract remains owned by `internal/analyse`.
+boundaries; the report contract remains owned by `internal/analyze`.
 
 ## Runtime flow
 
-1. Cobra parses `analyse CHART` or `release-json CHART`.
+1. Cobra parses `analyze CHART` or `release-json CHART`.
 2. Cobra writes command-line flag values into `config.Config`, which the CLI
    validates before use.
 3. The CLI creates a request-scoped `slog.Logger` that writes to stderr.
@@ -52,9 +52,10 @@ boundaries; the report contract remains owned by `internal/analyse`.
    storage and returns a deep copy.
 8. `internal/releasesecret` removes Helm's base64 and optional gzip encoding
    and validates the resulting JSON.
-9. `internal/analyse` measures the original decoded bytes without re-encoding
+9. `internal/analyze` measures the original decoded bytes without re-encoding
    them.
-10. The requested report or release JSON is written to stdout.
+10. Table, JSON, or release JSON output is written to stdout. Web output starts
+    a loopback HTTP server on a random port and opens the default browser.
 
 Every analysis owns its fake client, Helm storage, logger, and configuration
 state. Do not introduce shared mutable package state.
@@ -71,6 +72,8 @@ state. Do not introduce shared mutable package state.
   disabled unless deterministic in-memory semantics are implemented and
   tested.
 - Logs and diagnostics use stderr. Reports and raw release JSON use stdout.
+- Web reports bind only to `127.0.0.1`, use no remote assets, and stop on
+  context cancellation or a request from the report page.
 - Rendered secrets and complete values maps must not be logged.
 - Context cancellation is propagated whenever the underlying API accepts a
   context.
@@ -88,12 +91,15 @@ only to the total.
 
 The analyzer must not decode and re-encode property values for measurement;
 doing so would change escaping, whitespace, and potentially field ordering.
+The web report extends the same span measurement recursively to every object
+property and array element. Its scalar previews do not affect measurement.
 
 ## Supported behavior and limitations
 
 The current implementation loads local chart directories or packaged charts.
 It supports values files, `--set`, `--set-string`, `--set-file`, optional CRD
-inclusion, table output, JSON output, and raw decoded release JSON output.
+inclusion, table output, JSON output, interactive web output, and raw decoded
+release JSON output.
 
 The in-memory resource client is intentionally not an API server. It does not
 provide discovery, admission, generated metadata, controllers, server-side
@@ -115,14 +121,15 @@ Tests should protect behavior at the narrowest useful boundary:
 - compressed, uncompressed, missing, and malformed payloads in
   `internal/releasesecret`;
 - exact byte attribution for whitespace, escaped keys, empty objects, nested
-  values, and trailing data in `internal/analyse`;
-- deterministic output, stream errors, and unsupported formats in
-  `internal/report`;
+  values, and trailing data in `internal/analyze`;
+- deterministic output, stream errors, unsupported formats, recursive web
+  measurements, and loopback server shutdown in `internal/report`;
 - command behavior, strict stdout/stderr separation, cancellation, contextual
   errors, and exit mapping in `internal/cli`.
 
 Integration tests should prove that normal execution cannot load kubeconfig or
-perform network I/O and that concurrent analyses do not share mutable state.
+perform network I/O and that concurrent analysis operations do not share
+mutable state.
 Keep fixture charts small and focused on one behavior.
 
 Run the validation commands documented in `CONTRIBUTING.md` before submitting

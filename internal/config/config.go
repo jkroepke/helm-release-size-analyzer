@@ -24,7 +24,7 @@ func (c Config) Validate() error {
 		return errNamespace
 	}
 
-	if !oneOf(c.Output, "table", "json") {
+	if !oneOf(c.Output, "table", "json", "web") {
 		return errOutput
 	}
 

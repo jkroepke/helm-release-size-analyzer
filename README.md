@@ -8,12 +8,16 @@
 
 # helm-release-size-analyzer
 
+⭐ Don't forget to star this repository! ⭐
+
+## About
+
 `helm-release-size-analyzer` shows how much space a Helm release occupies and
 attributes the decoded release JSON size to its top-level properties.
 
 It runs Helm with isolated in-memory Kubernetes dependencies and measures the
-Secret written by Helm's real Secret storage driver. It does not require a
-cluster, load kubeconfig, contact a Kubernetes API, or modify cluster state.
+Secret written by Helm's real Secret storage driver. It doesn't require a
+cluster, load kubeconfig, contact a Kubernetes API, or modify the cluster state.
 
 Large chart files and CRDs can push Helm's stored release toward the Kubernetes
 1 MiB object-size limit. [Handling Large Files and CRDs in Helm and the 1MB
@@ -21,18 +25,19 @@ Release Limit](https://jkroepke.de/2026/02/handling-large-files-and-crds-in-helm
 explains the constraint, why CRD-heavy charts are especially affected, and
 ways to reduce release size. This analyzer complements that guidance with a
 local, property-level view of the decoded release payload before installation.
-The decoded size is not the size of the encoded Kubernetes Secret object.
+The decoded size isn’t the size of the encoded Kubernetes Secret object.
 
 ## Features
 
 - Measures the exact decoded JSON persisted in a Helm release Secret.
 - Reports the total size and exact size of every top-level property.
 - Uses Helm's chart loader, values handling, install action, and Secret driver.
-- Supports local chart directories and packaged charts.
-- Supports values files, `--set`, `--set-string`, and `--set-file`.
-- Produces human-readable table output or machine-readable JSON.
+- Support local chart directories and packaged charts.
+- Support values files, `--set`, `--set-string`, and `--set-file`.
+- Produces human-readable table output, machine-readable JSON, or an
+  interactive web report.
 - Prints the uncompressed release JSON for further inspection.
-- Keeps logs on stderr and report data on stdout.
+- Keeps logs on stderr and non-web report data on stdout.
 
 ## Quick start
 
@@ -40,16 +45,16 @@ The decoded size is not the size of the encoded Kubernetes Secret object.
 
 Download an archive for your platform from
 [GitHub Releases](https://github.com/jkroepke/helm-release-size-analyzer/releases),
-or install the latest version from source:
+or install the latest version from the source:
 
 ```shell
 go install github.com/jkroepke/helm-release-size-analyzer/cmd/helm-release-size-analyzer@latest
 ```
 
-### Analyse a chart
+### Analyze a chart
 
 ```shell
-helm-release-size-analyzer analyse ./my-chart \
+helm-release-size-analyzer analyze ./my-chart \
   --release-name example \
   --namespace default
 ```
@@ -74,7 +79,7 @@ Actual sizes depend on the chart, values, and pinned Helm version.
 Use JSON output in automation:
 
 ```shell
-helm-release-size-analyzer analyse ./my-chart --output json
+helm-release-size-analyzer analyze ./my-chart --output json
 ```
 
 ```json
@@ -89,6 +94,19 @@ helm-release-size-analyzer analyse ./my-chart --output json
 }
 ```
 
+Use the interactive web report to inspect every nested object property and
+array element:
+
+```shell
+helm-release-size-analyzer analyze ./my-chart --output web
+```
+
+The command listens on a random `127.0.0.1` port, opens the report in the
+default browser, and runs until you select **Stop server** or interrupt the
+command. The terminal logs the URL so that you can open it manually if the
+browser can’t be started. The report is self-contained, loads no remote
+assets, and sends no release data outside the local process.
+
 To inspect the decoded payload directly:
 
 ```shell
@@ -100,11 +118,14 @@ helm-release-size-analyzer release-json ./my-chart > release.json
 `total_bytes` is the byte length of the complete decoded release JSON,
 including outer braces and JSON syntax. A property size includes its encoded
 key, value, whitespace, and delimiter comma. Property order matches the stored
-JSON. The report also includes second-level properties of `chart`, such as
-`chart.values`.
+JSON. Table and JSON reports also include second-level properties of `chart`,
+such as `chart.values`. The web report applies the same exact-byte definition
+recursively to every object property and array element. String previews in the
+web report are truncated to keep large releases responsive; the reported byte
+sizes aren’t truncated.
 
 The analyzer measures the original bytes after removing Helm's storage
-encoding. It does not re-encode values, estimate the payload from rendered
+encoding. It doesn’t re-encode values, estimate the payload from rendered
 resources, or measure the SDK-returned release object.
 
 ## Command-line flags
@@ -113,25 +134,25 @@ The CLI is configured only through command-line flags.
 
 Common flags:
 
-| Flag | Description |
-| --- | --- |
-| `--release-name` | Release name; defaults to the chart name |
-| `--namespace` | Simulated release namespace; defaults to `default` |
-| `-f`, `--values` | Values file; may be repeated |
-| `--set` | Set a value with Helm syntax |
-| `--set-string` | Set a string value with Helm syntax |
-| `--set-file` | Set a value from a file |
-| `--include-crds` | Include CRDs in the stored manifest |
-| `-o`, `--output` | Output format: `table` or `json` |
-| `--log-level` | Log level: `debug`, `info`, `warn`, or `error` |
-| `--log-format` | Log format: `text` or `json` |
+| Flag             | Description                                        |
+|------------------|----------------------------------------------------|
+| `--release-name` | Release name; defaults to the chart name           |
+| `--namespace`    | Simulated release namespace; defaults to `default` |
+| `-f`, `--values` | Values file; may be repeated                       |
+| `--set`          | Set a value with Helm syntax                       |
+| `--set-string`   | Set a string value with Helm syntax                |
+| `--set-file`     | Set a value from a file                            |
+| `--include-crds` | Include CRDs in the stored manifest                |
+| `-o`, `--output` | Output format: `table`, `json`, or `web`           |
+| `--log-level`    | Log level: `debug`, `info`, `warn`, or `error`     |
+| `--log-format`   | Log format: `text` or `json`                       |
 
-Run `helm-release-size-analyzer analyse --help` for the complete command
+Run `helm-release-size-analyzer analyze --help` for the complete command
 reference.
 
 ## Limitations
 
-The in-memory resource client is not a Kubernetes API server. It does not
+The in-memory resource client isn’t a Kubernetes API server. It doesn’t
 provide discovery, admission, generated metadata, controllers, server-side
 validation, or API-faithful template lookups. Hooks, waiting, atomic
 installation, and live OpenAPI validation are disabled.

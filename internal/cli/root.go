@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,7 +27,7 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 
 	root := &cobra.Command{
 		Use:           "helm-release-size-analyzer",
-		Short:         "Analyse the JSON stored in a Helm release Secret",
+		Short:         "Analyze the JSON stored in a Helm release Secret",
 		Version:       version.String(),
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -36,14 +37,14 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level: debug, info, warn, error")
 	root.PersistentFlags().StringVar(&logFormat, "log-format", "text", "log format: text or json")
 
-	analyseConfig := config.Config{Namespace: "default", Output: "table"}
+	analyzeConfig := config.Config{Namespace: "default", Output: "table"}
 
-	analyseCmd := &cobra.Command{
-		Use:   "analyse CHART",
-		Short: "Install a chart in memory and analyse its Helm release Secret",
+	analyzeCmd := &cobra.Command{
+		Use:   "analyze CHART",
+		Short: "Install a chart in memory and analyze its Helm release Secret",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := validatedConfig(analyseConfig, logLevel, logFormat)
+			cfg, err := validatedConfig(analyzeConfig, logLevel, logFormat)
 			if err != nil {
 				return err
 			}
@@ -61,23 +62,12 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 				return fmt.Errorf("decode release JSON: %w", err)
 			}
 
-			// DecodeJSON validates the payload before returning it.
-			result, err := analyze.BuildValidated(releaseJSON)
-			if err != nil {
-				return fmt.Errorf("analyse release: %w", err)
-			}
-
-			err = report.Write(stdout, cfg.Output, result)
-			if err != nil {
-				return fmt.Errorf("write report: %w", err)
-			}
-
-			return nil
+			return writeAnalysis(cmd.Context(), stdout, logger, cfg.Output, releaseJSON)
 		},
 	}
-	addInstallFlags(analyseCmd, &analyseConfig)
-	flags := analyseCmd.Flags()
-	flags.StringVarP(&analyseConfig.Output, "output", "o", analyseConfig.Output, "output format: table or json")
+	addInstallFlags(analyzeCmd, &analyzeConfig)
+	flags := analyzeCmd.Flags()
+	flags.StringVarP(&analyzeConfig.Output, "output", "o", analyzeConfig.Output, "output format: table, json, or web")
 
 	releaseJSONConfig := config.Config{Namespace: "default", Output: "table"}
 
@@ -114,9 +104,49 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	}
 	addInstallFlags(releaseJSONCmd, &releaseJSONConfig)
 
-	root.AddCommand(analyseCmd, releaseJSONCmd)
+	root.AddCommand(analyzeCmd, releaseJSONCmd)
 
 	return root
+}
+
+func writeAnalysis(ctx context.Context, out io.Writer, logger *slog.Logger, format string, releaseJSON []byte) error {
+	if format == "web" {
+		return serveWebReport(ctx, logger, releaseJSON)
+	}
+
+	// DecodeJSON validates the payload before returning it.
+	result, err := analyze.BuildValidated(releaseJSON)
+	if err != nil {
+		return fmt.Errorf("analyze release: %w", err)
+	}
+
+	err = report.Write(out, format, result)
+	if err != nil {
+		return fmt.Errorf("write report: %w", err)
+	}
+
+	return nil
+}
+
+func serveWebReport(ctx context.Context, logger *slog.Logger, releaseJSON []byte) error {
+	tree, err := analyze.BuildTreeValidated(releaseJSON)
+	if err != nil {
+		return fmt.Errorf("analyze release tree: %w", err)
+	}
+
+	err = report.ServeWeb(ctx, tree, func(url string) {
+		logger.InfoContext(ctx, "web report ready", slog.String("url", url))
+
+		browserErr := report.OpenBrowser(url)
+		if browserErr != nil {
+			logger.WarnContext(ctx, "could not open browser", slog.Any("error", browserErr))
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("serve web report: %w", err)
+	}
+
+	return nil
 }
 
 // writeReleaseJSON writes the complete release payload or reports a short write.

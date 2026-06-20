@@ -19,7 +19,7 @@ func (shortWriter) Write(data []byte) (int, error) {
 	return len(data) - 1, nil
 }
 
-func TestAnalyseCommandJSON(t *testing.T) {
+func TestAnalyzeCommandJSON(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr bytes.Buffer
@@ -27,7 +27,7 @@ func TestAnalyseCommandJSON(t *testing.T) {
 	cmd := cli.NewRootCommand(&stdout, &stderr)
 	chartPath := filepath.Join("..", "helminstall", "testdata", "basic")
 	cmd.SetArgs([]string{
-		"analyse", chartPath,
+		"analyze", chartPath,
 		"--release-name", "cli-test",
 		"--set", "message=from-cli",
 		"--output", "json",
@@ -57,17 +57,17 @@ func TestAnalyseCommandJSON(t *testing.T) {
 	assert.Positive(t, chartValuesBytes)
 }
 
-func TestAnalyseCommandRejectsYAML(t *testing.T) {
+func TestAnalyzeCommandRejectsYAML(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr bytes.Buffer
 
 	cmd := cli.NewRootCommand(&stdout, &stderr)
 	chartPath := filepath.Join("..", "helminstall", "testdata", "basic")
-	cmd.SetArgs([]string{"analyse", chartPath, "--output", "yaml"})
+	cmd.SetArgs([]string{"analyze", chartPath, "--output", "yaml"})
 
 	err := cmd.ExecuteContext(context.Background())
-	require.EqualError(t, err, "invalid configuration: output must be one of table or json")
+	require.EqualError(t, err, "invalid configuration: output must be one of table, json, or web")
 }
 
 func TestReleaseJSONCommand(t *testing.T) {

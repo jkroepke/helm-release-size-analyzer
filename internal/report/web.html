@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-__HELM_RELEASE_SIZE_ANALYZER_NONCE__'; connect-src 'self'">
+  <title>Helm release size analyzer</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 0; background: #0b1020; color: #e5e7eb; }
+    main { width: min(1100px, calc(100% - 32px)); margin: 32px auto; }
+    header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+    h1 { margin: 0 0 6px; font-size: clamp(1.45rem, 3vw, 2.1rem); }
+    .subtitle { margin: 0; color: #9ca3af; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    button { border: 1px solid #374151; border-radius: 7px; padding: 8px 12px; background: #172033; color: inherit; cursor: pointer; }
+    button:hover { background: #243047; }
+    .panel { overflow: hidden; border: 1px solid #263248; border-radius: 10px; background: #111827; box-shadow: 0 18px 50px #0005; }
+    .columns, summary { display: grid; grid-template-columns: minmax(180px, 1fr) 110px 90px; gap: 12px; align-items: center; }
+    .columns { padding: 10px 16px; background: #172033; color: #9ca3af; font-size: .78rem; font-weight: 700; text-transform: uppercase; }
+    .number { text-align: right; font-variant-numeric: tabular-nums; }
+    details { border-top: 1px solid #263248; }
+    details:first-child { border-top: 0; }
+    summary { min-height: 42px; padding: 0 16px; cursor: pointer; list-style: none; }
+    summary::-webkit-details-marker { display: none; }
+    summary:hover { background: #172033; }
+    .name { min-width: 0; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .branch > summary .name::before { display: inline-block; width: 18px; content: "▸"; color: #60a5fa; }
+    .branch[open] > summary .name::before { content: "▾"; }
+    .leaf .name::before { display: inline-block; width: 18px; content: "·"; color: #64748b; }
+    .kind { margin-left: 8px; color: #94a3b8; font-family: ui-sans-serif, system-ui, sans-serif; font-size: .78rem; }
+    .preview { margin-left: 10px; color: #a7f3d0; }
+    .children { margin-left: 22px; border-left: 1px solid #334155; }
+    .bar { height: 3px; background: #1e293b; }
+    .bar > span { display: block; height: 100%; background: #3b82f6; }
+    #status { min-height: 1.25em; margin-top: 12px; color: #9ca3af; font-size: .85rem; }
+    @media (max-width: 620px) { .columns, summary { grid-template-columns: minmax(120px, 1fr) 84px; } .percent { display: none; } header { align-items: start; flex-direction: column; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>Helm release size analyzer</h1><p class="subtitle" id="total"></p></div>
+    <div class="actions"><button id="expand" type="button">Expand all</button><button id="collapse" type="button">Collapse all</button><button id="stop" type="button">Stop server</button></div>
+  </header>
+  <section class="panel">
+    <div class="columns"><span>Property</span><span class="number">Size</span><span class="number percent">Total</span></div>
+    <div id="tree"></div>
+  </section>
+  <div id="status"></div>
+</main>
+<script nonce="__HELM_RELEASE_SIZE_ANALYZER_NONCE__">
+  'use strict';
+  const report = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob('__HELM_RELEASE_SIZE_ANALYZER_DATA__'), character => character.charCodeAt(0))));
+  const totalBytes = report.root.bytes;
+  const formatBytes = bytes => bytes.toLocaleString() + (bytes === 1 ? ' byte' : ' bytes');
+  const create = (node, root = false) => {
+    const details = document.createElement('details');
+    details.className = node.children?.length ? 'branch' : 'leaf';
+    details.open = root;
+    const summary = document.createElement('summary');
+    const label = document.createElement('span');
+    label.className = 'name';
+    label.textContent = node.name;
+    const kind = document.createElement('span');
+    kind.className = 'kind';
+    kind.textContent = node.kind;
+    label.append(kind);
+    if (node.preview) {
+      const preview = document.createElement('span');
+      preview.className = 'preview';
+      preview.textContent = node.kind === 'string' ? JSON.stringify(node.preview) : node.preview;
+      label.append(preview);
+    }
+    const size = document.createElement('span');
+    size.className = 'number';
+    size.textContent = formatBytes(node.bytes);
+    const percent = document.createElement('span');
+    percent.className = 'number percent';
+    percent.textContent = (node.bytes / totalBytes * 100).toFixed(1) + '%';
+    summary.append(label, size, percent);
+    details.append(summary);
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    const fill = document.createElement('span');
+    fill.style.width = (node.bytes / totalBytes * 100) + '%';
+    bar.append(fill);
+    details.append(bar);
+    if (node.children?.length) {
+      const children = document.createElement('div');
+      children.className = 'children';
+      node.children.forEach(child => children.append(create(child)));
+      details.append(children);
+    }
+    return details;
+  };
+  document.querySelector('#tree').append(create(report.root, true));
+  document.querySelector('#total').textContent = 'Decoded release JSON: ' + formatBytes(totalBytes);
+  document.querySelector('#expand').addEventListener('click', () => document.querySelectorAll('details').forEach(item => item.open = true));
+  document.querySelector('#collapse').addEventListener('click', () => document.querySelectorAll('details').forEach((item, index) => item.open = index === 0));
+  document.querySelector('#stop').addEventListener('click', async () => {
+    await fetch('/shutdown', {method: 'POST'});
+    document.querySelector('#status').textContent = 'Server stopped. You can close this tab.';
+  });
+</script>
+</body>
+</html>
