@@ -6,10 +6,11 @@ import (
 	"io"
 	"text/tabwriter"
 
-	"github.com/jkroepke/helm-release-size-analyser/internal/analyse"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/analyze"
 )
 
-func Write(out io.Writer, format string, report analyse.Report) error {
+// Write renders a report in the requested output format.
+func Write(out io.Writer, format string, report analyze.Report) error {
 	switch format {
 	case "json":
 		encoder := json.NewEncoder(out)
@@ -28,21 +29,22 @@ func Write(out io.Writer, format string, report analyse.Report) error {
 	}
 }
 
-func writeTable(out io.Writer, report analyse.Report) error {
+// writeTable renders a human-readable size table.
+func writeTable(out io.Writer, report analyze.Report) error {
 	writer := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 
-	_, err := fmt.Fprintln(writer, "PROPERTY\tBYTES")
+	_, err := fmt.Fprintln(writer, "PROPERTY\tSIZE")
 	if err != nil {
 		return fmt.Errorf("write table header: %w", err)
 	}
 
-	_, err = fmt.Fprintf(writer, "TOTAL\t%d\n", report.TotalBytes)
+	_, err = fmt.Fprintf(writer, "TOTAL\t%s\n", humanSize(report.TotalBytes))
 	if err != nil {
 		return fmt.Errorf("write total size: %w", err)
 	}
 
 	for _, property := range report.Properties {
-		_, err = fmt.Fprintf(writer, "%s\t%d\n", property.Name, property.Bytes)
+		_, err = fmt.Fprintf(writer, "%s\t%s\n", property.Name, humanSize(property.Bytes))
 		if err != nil {
 			return fmt.Errorf("write property %q: %w", property.Name, err)
 		}
@@ -54,4 +56,13 @@ func writeTable(out io.Writer, report analyse.Report) error {
 	}
 
 	return nil
+}
+
+// humanSize formats a byte count in bytes or kibibyte-based kilobytes.
+func humanSize(bytes int) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%.2f B", float64(bytes))
+	}
+
+	return fmt.Sprintf("%.2f KB", float64(bytes)/1024)
 }

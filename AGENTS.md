@@ -2,27 +2,19 @@
 
 The following guidelines apply to all files in this repository.
 
-Before you start contributing, read [`DEVELOPER.md`](DEVELOPER.md) for a basic
-understanding of how the project is structured and works.
+Before making changes, read [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+[`DEVELOPER.md`](DEVELOPER.md). Follow the contribution and validation workflow
+in `CONTRIBUTING.md`; do not duplicate it here.
 
-Ensure that the local go version matches the one specified in
-[`go.mod`](go.mod).
-Never update the Go version in `go.mod`.
+Preserve unrelated worktree changes. Verify an uncertain [Helm](https://github.com/helm/helm), Kubernetes, [Cobra](https://github.com/spf13/cobra)
+or [Viper](https://github.com/spf13/viper) behavior against a current documentation rather than relying on memory.
 
-## Programmatic checks
+All documentation changes must comply with
+[textlint-rule-terminology](https://github.com/sapegin/textlint-rule-terminology)
+and its
+[terminology ruleset](https://github.com/sapegin/textlint-rule-terminology/blob/master/terms.jsonc).
+A mandatory rule, because CI checks it.
 
-Before committing any changes, always run:
-
-1. `make fmt` – formats all Go code.
-2. `make lint` – runs the linter.
-3. `make test` – executes the test suite.
-
-If a command fails because of missing dependencies or network restrictions, note this in the PR's Testing section using the provided disclaimer.
-
-## Pull requests
-
-Summarize your changes and cite relevant lines in the repository. Mention the output of the programmatic checks.
-
-## Program overview
-
-`helm-release-size-analyser` is written in Go.
+Keep `README.md` and `DEVELOPER.md` aligned with verified behavior. User
+documentation must cover installation, commands, flags, examples, output
+definitions, in-memory limitations, and the no-cluster-access guarantee.

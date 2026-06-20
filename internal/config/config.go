@@ -6,18 +6,19 @@ import (
 )
 
 type Config struct {
-	ReleaseName string   `mapstructure:"release-name"`
-	Namespace   string   `mapstructure:"namespace"`
-	Output      string   `mapstructure:"output"`
-	LogLevel    string   `mapstructure:"log-level"`
-	LogFormat   string   `mapstructure:"log-format"`
-	ValueFiles  []string `mapstructure:"values"`
-	SetValues   []string `mapstructure:"set"`
-	SetStrings  []string `mapstructure:"set-string"`
-	SetFiles    []string `mapstructure:"set-file"`
-	IncludeCRDs bool     `mapstructure:"include-crds"`
+	ReleaseName string
+	Namespace   string
+	Output      string
+	LogLevel    string
+	LogFormat   string
+	ValueFiles  []string
+	SetValues   []string
+	SetStrings  []string
+	SetFiles    []string
+	IncludeCRDs bool
 }
 
+// Validate checks that all configuration values satisfy the CLI contract.
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.Namespace) == "" {
 		return errNamespace
@@ -38,6 +39,7 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// oneOf reports whether value is present in allowed.
 func oneOf(value string, allowed ...string) bool {
 	return slices.Contains(allowed, value)
 }

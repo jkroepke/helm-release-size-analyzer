@@ -17,9 +17,9 @@ body:
       label: Environment
       description: |
         examples:
-        - **helm-release-size-analyser Version**: 1.5.1
+        - **helm-release-size-analyzer Version**: 1.5.1
       value: |
-        - helm-release-size-analyser Version:
+        - helm-release-size-analyzer Version:
     validations:
       required: false
 
@@ -31,5 +31,5 @@ body:
         - required: true
           #language=markdown
           label: |
-            I could not find a solution in the [documentation](https://github.com/jkroepke/helm-release-size-analyser/wiki),
-            the [FAQ](https://github.com/jkroepke/helm-release-size-analyser/wiki/FAQ), the existing issues or discussions.
+            I could not find a solution in the [documentation](https://github.com/jkroepke/helm-release-size-analyzer/wiki),
+            the [FAQ](https://github.com/jkroepke/helm-release-size-analyzer/wiki/FAQ), the existing issues or discussions.

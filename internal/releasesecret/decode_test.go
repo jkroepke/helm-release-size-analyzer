@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/jkroepke/helm-release-size-analyser/internal/releasesecret"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/releasesecret"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -47,4 +47,13 @@ func TestDecodeJSONSupportsUncompressedPayload(t *testing.T) {
 	got, err := releasesecret.DecodeJSON(secret)
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
+}
+
+func TestDecodeJSONRejectsInvalidBase64(t *testing.T) {
+	t.Parallel()
+
+	secret := &corev1.Secret{Data: map[string][]byte{"release": []byte("not base64")}}
+
+	_, err := releasesecret.DecodeJSON(secret)
+	require.ErrorContains(t, err, "decode Helm release payload")
 }

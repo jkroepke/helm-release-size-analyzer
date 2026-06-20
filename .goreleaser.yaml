@@ -3,13 +3,13 @@
 version: 2
 
 builds:
-  - id: "helm-release-size-analyser"
-    main: ./cmd/helm-release-size-analyser
-    binary: helm-release-size-analyser
+  - id: "helm-release-size-analyzer"
+    main: ./cmd/helm-release-size-analyzer
+    binary: helm-release-size-analyzer
     goos:
+      - windows
+      - darwin
       - linux
-      - freebsd
-      - openbsd
     goarch:
       - amd64
       - arm64
@@ -23,15 +23,15 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X helm-release-size-analyser/internal/version.Version={{.Version}}
-        -X helm-release-size-analyser/internal/version.Revision={{.Commit}}
-        -X helm-release-size-analyser/internal/version.Branch={{.Branch}}
-        -X helm-release-size-analyser/internal/version.BuildDate={{.Date}}
+        -X github.com/jkroepke/helm-release-size-analyzer/internal/version.Version={{.Version}}
+        -X github.com/jkroepke/helm-release-size-analyzer/internal/version.Revision={{.Commit}}
+        -X github.com/jkroepke/helm-release-size-analyzer/internal/version.Branch={{.Branch}}
+        -X github.com/jkroepke/helm-release-size-analyzer/internal/version.BuildDate={{.Date}}
 
 archives:
-  - id: helm-release-size-analyser
+  - id: helm-release-size-analyzer
     ids:
-      - helm-release-size-analyser
+      - helm-release-size-analyzer
     formats: ['tar.xz']
     files:
       - LICENSE.txt

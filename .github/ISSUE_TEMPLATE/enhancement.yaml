@@ -48,5 +48,5 @@ body:
         - required: true
           #language=markdown
           label: |
-            I could not find a solution in the [documentation](https://github.com/jkroepke/helm-release-size-analyser/wiki),
-            the [FAQ](https://github.com/jkroepke/helm-release-size-analyser/wiki/FAQ), the existing issues or discussions.
+            I could not find a solution in the [documentation](https://github.com/jkroepke/helm-release-size-analyzer/wiki),
+            the [FAQ](https://github.com/jkroepke/helm-release-size-analyzer/wiki/FAQ), the existing issues or discussions.

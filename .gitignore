@@ -21,8 +21,8 @@ tests/*
 !tests/systemd/
 tests/systemd/prometheus-nginx-exporter.conf
 
-/helm-release-size-analyser
-/helm-release-size-analyser.exe
+/helm-release-size-analyzer
+/helm-release-size-analyzer.exe
 dist/
 bin/
 

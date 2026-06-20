@@ -1,32 +1,31 @@
 package cli
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 
-	"github.com/jkroepke/helm-release-size-analyser/internal/analyse"
-	"github.com/jkroepke/helm-release-size-analyser/internal/config"
-	"github.com/jkroepke/helm-release-size-analyser/internal/helminstall"
-	"github.com/jkroepke/helm-release-size-analyser/internal/releasesecret"
-	"github.com/jkroepke/helm-release-size-analyser/internal/report"
-	"github.com/jkroepke/helm-release-size-analyser/internal/version"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/analyze"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/config"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/helminstall"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/releasesecret"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/report"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/version"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
+// ExitCode maps a command error to the process exit status.
 func ExitCode(_ error) int {
 	return 1
 }
 
+// NewRootCommand constructs the CLI command tree with the provided output streams.
 func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
-	configLoader := viper.New()
-
-	var configFile string
+	var logLevel, logFormat string
 
 	root := &cobra.Command{
-		Use:           "helm-release-size-analyser",
+		Use:           "helm-release-size-analyzer",
 		Short:         "Analyse the JSON stored in a Helm release Secret",
 		Version:       version.String(),
 		SilenceErrors: true,
@@ -34,16 +33,17 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	root.PersistentFlags().StringVar(&configFile, "config", "", "configuration file")
-	root.PersistentFlags().String("log-level", "info", "log level: debug, info, warn, error")
-	root.PersistentFlags().String("log-format", "text", "log format: text or json")
+	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level: debug, info, warn, error")
+	root.PersistentFlags().StringVar(&logFormat, "log-format", "text", "log format: text or json")
+
+	analyseConfig := config.Config{Namespace: "default", Output: "table"}
 
 	analyseCmd := &cobra.Command{
 		Use:   "analyse CHART",
 		Short: "Install a chart in memory and analyse its Helm release Secret",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig(configLoader, cmd, configFile)
+			cfg, err := validatedConfig(analyseConfig, logLevel, logFormat)
 			if err != nil {
 				return err
 			}
@@ -61,7 +61,8 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 				return fmt.Errorf("decode release JSON: %w", err)
 			}
 
-			result, err := analyse.Build(releaseJSON)
+			// DecodeJSON validates the payload before returning it.
+			result, err := analyze.BuildValidated(releaseJSON)
 			if err != nil {
 				return fmt.Errorf("analyse release: %w", err)
 			}
@@ -74,16 +75,18 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 			return nil
 		},
 	}
-	addInstallFlags(analyseCmd)
+	addInstallFlags(analyseCmd, &analyseConfig)
 	flags := analyseCmd.Flags()
-	flags.StringP("output", "o", "table", "output format: table or json")
+	flags.StringVarP(&analyseConfig.Output, "output", "o", analyseConfig.Output, "output format: table or json")
+
+	releaseJSONConfig := config.Config{Namespace: "default", Output: "table"}
 
 	releaseJSONCmd := &cobra.Command{
 		Use:   "release-json CHART",
 		Short: "Install a chart in memory and print its uncompressed Helm release JSON",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig(configLoader, cmd, configFile)
+			cfg, err := validatedConfig(releaseJSONConfig, logLevel, logFormat)
 			if err != nil {
 				return err
 			}
@@ -101,68 +104,49 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 				return fmt.Errorf("decode release JSON: %w", err)
 			}
 
-			_, err = stdout.Write(releaseJSON)
+			err = writeReleaseJSON(stdout, releaseJSON)
 			if err != nil {
-				return fmt.Errorf("write release JSON: %w", err)
+				return err
 			}
 
 			return nil
 		},
 	}
-	addInstallFlags(releaseJSONCmd)
+	addInstallFlags(releaseJSONCmd, &releaseJSONConfig)
 
 	root.AddCommand(analyseCmd, releaseJSONCmd)
 
 	return root
 }
 
-func addInstallFlags(cmd *cobra.Command) {
-	flags := cmd.Flags()
-	flags.String("release-name", "", "release name (defaults to chart name)")
-	flags.String("namespace", "default", "simulated release namespace")
-	flags.StringSliceP("values", "f", nil, "values file (repeatable)")
-	flags.StringArray("set", nil, "set a value")
-	flags.StringArray("set-string", nil, "set a string value")
-	flags.StringArray("set-file", nil, "set a value from a file")
-	flags.Bool("include-crds", false, "include CRDs in the stored manifest")
+// writeReleaseJSON writes the complete release payload or reports a short write.
+func writeReleaseJSON(out io.Writer, releaseJSON []byte) error {
+	_, err := io.Copy(out, bytes.NewReader(releaseJSON))
+	if err != nil {
+		return fmt.Errorf("write release JSON: %w", err)
+	}
+
+	return nil
 }
 
-func loadConfig(configLoader *viper.Viper, cmd *cobra.Command, configFile string) (config.Config, error) {
-	configLoader.SetDefault("namespace", "default")
-	configLoader.SetDefault("output", "table")
-	configLoader.SetDefault("log-level", "info")
-	configLoader.SetDefault("log-format", "text")
-	configLoader.SetEnvPrefix("HELM_RELEASE_SIZE_ANALYSER")
-	configLoader.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))
-	configLoader.AutomaticEnv()
+// addInstallFlags binds Helm installation flags directly to cfg.
+func addInstallFlags(cmd *cobra.Command, cfg *config.Config) {
+	flags := cmd.Flags()
+	flags.StringVar(&cfg.ReleaseName, "release-name", "", "release name (defaults to chart name)")
+	flags.StringVar(&cfg.Namespace, "namespace", cfg.Namespace, "simulated release namespace")
+	flags.StringSliceVarP(&cfg.ValueFiles, "values", "f", nil, "values file (repeatable)")
+	flags.StringArrayVar(&cfg.SetValues, "set", nil, "set a value")
+	flags.StringArrayVar(&cfg.SetStrings, "set-string", nil, "set a string value")
+	flags.StringArrayVar(&cfg.SetFiles, "set-file", nil, "set a value from a file")
+	flags.BoolVar(&cfg.IncludeCRDs, "include-crds", false, "include CRDs in the stored manifest")
+}
 
-	err := configLoader.BindPFlags(cmd.Flags())
-	if err != nil {
-		return config.Config{}, fmt.Errorf("bind command flags: %w", err)
-	}
+// validatedConfig applies global logging flags and validates the resulting configuration.
+func validatedConfig(cfg config.Config, logLevel, logFormat string) (config.Config, error) {
+	cfg.LogLevel = logLevel
+	cfg.LogFormat = logFormat
 
-	err = configLoader.BindPFlags(cmd.Root().PersistentFlags())
-	if err != nil {
-		return config.Config{}, fmt.Errorf("bind global flags: %w", err)
-	}
-
-	if configFile != "" {
-		configLoader.SetConfigFile(configFile)
-
-		err = configLoader.ReadInConfig()
-		if err != nil {
-			return config.Config{}, fmt.Errorf("read config file: %w", err)
-		}
-	}
-
-	var cfg config.Config
-
-	err = configLoader.Unmarshal(&cfg)
-	if err != nil {
-		return config.Config{}, fmt.Errorf("decode configuration: %w", err)
-	}
-
-	err = cfg.Validate()
+	err := cfg.Validate()
 	if err != nil {
 		return config.Config{}, fmt.Errorf("invalid configuration: %w", err)
 	}
@@ -170,6 +154,7 @@ func loadConfig(configLoader *viper.Viper, cmd *cobra.Command, configFile string
 	return cfg, nil
 }
 
+// newLogger creates a structured logger for the selected level and output format.
 func newLogger(out io.Writer, level, format string) *slog.Logger {
 	var slogLevel slog.Level
 

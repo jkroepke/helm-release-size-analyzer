@@ -6,8 +6,8 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/jkroepke/helm-release-size-analyser/internal/config"
-	"github.com/jkroepke/helm-release-size-analyser/internal/kubemock"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/config"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/kubemock"
 	"helm.sh/helm/v4/pkg/action"
 	"helm.sh/helm/v4/pkg/chart"
 	"helm.sh/helm/v4/pkg/chart/common"
@@ -27,6 +27,7 @@ type Result struct {
 	Secret *corev1.Secret
 }
 
+// Install runs a network-free Helm installation and returns its persisted release Secret.
 func Install(ctx context.Context, chartPath string, cfg config.Config, logger *slog.Logger) (Result, error) {
 	chrt, err := loader.Load(chartPath)
 	if err != nil {
@@ -71,6 +72,9 @@ func Install(ctx context.Context, chartPath string, cfg config.Config, logger *s
 	install.DisableHooks = true
 	install.DisableOpenAPIValidation = true
 	install.IncludeCRDs = cfg.IncludeCRDs
+	// CRDs are included in the persisted manifest when requested, but must not
+	// be installed through the in-memory resource client.
+	install.SkipCRDs = true
 	install.WaitStrategy = kube.HookOnlyStrategy
 
 	installed, err := install.RunWithContext(ctx, chrt, mergedValues)
@@ -94,7 +98,8 @@ func Install(ctx context.Context, chartPath string, cfg config.Config, logger *s
 		return Result{}, fmt.Errorf("%w: expected one, found %d", errUnexpectedSecretCount, len(secrets.Items))
 	}
 
-	return Result{
-		Secret: secrets.Items[0].DeepCopy(),
-	}, nil
+	// The client-go fake tracker returns a deep-copied list, and this request-scoped
+	// client is no longer used after selection. The selected item can therefore be
+	// returned directly and must be treated as read-only by callers.
+	return Result{Secret: &secrets.Items[0]}, nil
 }

@@ -15,6 +15,7 @@ type Recorder struct {
 	*kubefake.PrintingKubeClient
 }
 
+// NewRecorder returns a network-free Kubernetes client that discards rendered resources.
 func NewRecorder() *Recorder {
 	return &Recorder{PrintingKubeClient: &kubefake.PrintingKubeClient{
 		Out:       io.Discard,
@@ -22,6 +23,7 @@ func NewRecorder() *Recorder {
 	}}
 }
 
+// Build consumes rendered resources without contacting a Kubernetes API.
 func (r *Recorder) Build(reader io.Reader, _ bool) (kube.ResourceList, error) {
 	_, err := io.Copy(io.Discard, reader)
 	if err != nil {
@@ -33,6 +35,7 @@ func (r *Recorder) Build(reader io.Reader, _ bool) (kube.ResourceList, error) {
 	return make([]*resource.Info, 0), nil
 }
 
+// BuildTable delegates table-oriented resource building to Build.
 func (r *Recorder) BuildTable(reader io.Reader, validate bool) (kube.ResourceList, error) {
 	return r.Build(reader, validate)
 }

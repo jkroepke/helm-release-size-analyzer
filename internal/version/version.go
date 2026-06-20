@@ -9,6 +9,7 @@ var (
 	BuildDate = "unknown" //nolint:gochecknoglobals // Populated by GoReleaser through ldflags.
 )
 
+// String returns the complete build version description.
 func String() string {
 	return fmt.Sprintf(
 		"%s (revision: %s, branch: %s, built: %s)",
