@@ -1,2 +1,3 @@
 [codespell]
-skip = .gitignore
+check-hidden =
+skip = */package-lock.json,*/.gitignore,*/go.mod,*/go.sum,*.log,.git

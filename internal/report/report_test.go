@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/jkroepke/helm-release-size-analyser/internal/analyse"
-	"github.com/jkroepke/helm-release-size-analyser/internal/report"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/analyze"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/report"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -13,11 +13,11 @@ import (
 func TestWriteTable(t *testing.T) {
 	t.Parallel()
 
-	input := analyse.Report{
-		TotalBytes: 42,
-		Properties: []analyse.Property{
+	input := analyze.Report{
+		TotalBytes: 2048,
+		Properties: []analyze.Property{
 			{Name: "name", Bytes: 17},
-			{Name: "manifest", Bytes: 23},
+			{Name: "manifest", Bytes: 1536},
 		},
 	}
 
@@ -26,13 +26,13 @@ func TestWriteTable(t *testing.T) {
 	err := report.Write(&output, "table", input)
 	require.NoError(t, err)
 
-	want := "PROPERTY  BYTES\nTOTAL     42\nname      17\nmanifest  23\n"
+	want := "PROPERTY  SIZE\nTOTAL     2.00 KB\nname      17.00 B\nmanifest  1.50 KB\n"
 	assert.Equal(t, want, output.String())
 }
 
 func TestWriteRejectsYAML(t *testing.T) {
 	t.Parallel()
 
-	err := report.Write(&bytes.Buffer{}, "yaml", analyse.Report{})
+	err := report.Write(&bytes.Buffer{}, "yaml", analyze.Report{})
 	require.Error(t, err)
 }

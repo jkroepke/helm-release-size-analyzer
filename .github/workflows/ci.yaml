@@ -27,7 +27,7 @@ jobs:
           go-version-file: 'go.mod'
           cache: "${{ github.actor != 'renovate[bot]' && github.actor != 'mend[bot]' }}"
 
-      - run: go build ./cmd/helm-release-size-analyser
+      - run: go build ./cmd/helm-release-size-analyzer
       - run: go test ./... -timeout 20s -race -covermode=atomic -coverprofile=coverage.out -coverpkg=./...
       - run: go test ./... -timeout 20s -run='^$' -bench=. -benchmem -count 3
 
@@ -116,6 +116,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MULTI_STATUS: false
           LINTER_RULES_PATH: .
+          FILTER_REGEX_EXCLUDE: (^|/)go\.sum$
           GITHUB_ACTIONS_ZIZMOR_CONFIG_FILE: ./.github/zizmor.yml
           ENABLE_GITHUB_ACTIONS_STEP_SUMMARY: true
           ENABLE_GITHUB_PULL_REQUEST_SUMMARY_COMMENT: false
@@ -233,7 +234,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
-          NFPM_helm-release-size-analyser_PASSPHRASE: ${{ secrets.NFPM_PASSPHRASE }}
+          NFPM_helm-release-size-analyzer_PASSPHRASE: ${{ secrets.NFPM_PASSPHRASE }}
           GPG_KEY_PATH: ${{ secrets.GPG_KEY_PATH }}
 
       - uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0

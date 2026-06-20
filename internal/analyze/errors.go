@@ -1,4 +1,4 @@
-package analyse
+package analyze
 
 import "errors"
 

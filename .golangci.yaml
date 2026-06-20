@@ -172,7 +172,7 @@ linters:
     rules:
       - linters:
           - forbidigo
-        path: ^cmd/helm-release-size-analyser/main\.go$
+        path: ^cmd/helm-release-size-analyzer/main\.go$
       - linters:
           - contextcheck
           - cyclop

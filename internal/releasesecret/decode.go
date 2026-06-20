@@ -25,7 +25,7 @@ func DecodeJSON(secret *corev1.Secret) ([]byte, error) {
 		return nil, fmt.Errorf("%w: %q", errMissingPayload, secret.Name)
 	}
 
-	decoded, err := base64.StdEncoding.DecodeString(string(payload))
+	decoded, err := base64.StdEncoding.AppendDecode(nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("decode Helm release payload: %w", err)
 	}

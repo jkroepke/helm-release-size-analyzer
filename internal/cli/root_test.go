@@ -7,11 +7,17 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jkroepke/helm-release-size-analyser/internal/analyse"
-	"github.com/jkroepke/helm-release-size-analyser/internal/cli"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/analyze"
+	"github.com/jkroepke/helm-release-size-analyzer/internal/cli"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type shortWriter struct{}
+
+func (shortWriter) Write(data []byte) (int, error) {
+	return len(data) - 1, nil
+}
 
 func TestAnalyseCommandJSON(t *testing.T) {
 	t.Parallel()
@@ -30,13 +36,25 @@ func TestAnalyseCommandJSON(t *testing.T) {
 	err := cmd.ExecuteContext(context.Background())
 	require.NoError(t, err, stderr.String())
 
-	var got analyse.Report
+	var got analyze.Report
 
 	err = json.Unmarshal(stdout.Bytes(), &got)
 	require.NoError(t, err, stdout.String())
 	assert.NotZero(t, got.TotalBytes)
 	require.NotEmpty(t, got.Properties)
 	assert.Equal(t, "name", got.Properties[0].Name)
+
+	var chartValuesBytes int
+
+	for _, property := range got.Properties {
+		if property.Name == "chart.values" {
+			chartValuesBytes = property.Bytes
+
+			break
+		}
+	}
+
+	assert.Positive(t, chartValuesBytes)
 }
 
 func TestAnalyseCommandRejectsYAML(t *testing.T) {
@@ -83,6 +101,19 @@ func TestReleaseJSONCommand(t *testing.T) {
 	assert.Equal(t, "deployed", got.Info.Status)
 }
 
+func TestReleaseJSONCommandRejectsShortWrite(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+
+	cmd := cli.NewRootCommand(shortWriter{}, &stderr)
+	chartPath := filepath.Join("..", "helminstall", "testdata", "basic")
+	cmd.SetArgs([]string{"release-json", chartPath, "--release-name", "short-write"})
+
+	err := cmd.ExecuteContext(context.Background())
+	require.EqualError(t, err, "write release JSON: short write")
+}
+
 func TestVersionCommand(t *testing.T) {
 	t.Parallel()
 
@@ -94,6 +125,29 @@ func TestVersionCommand(t *testing.T) {
 	err := cmd.ExecuteContext(context.Background())
 	require.NoError(t, err, stderr.String())
 
-	want := "helm-release-size-analyser version dev (revision: unknown, branch: unknown, built: unknown)\n"
+	want := "helm-release-size-analyzer version dev (revision: unknown, branch: unknown, built: unknown)\n"
 	assert.Equal(t, want, stdout.String())
+}
+
+func TestConfigurationSourcesAreFlagsOnly(t *testing.T) {
+	t.Setenv("HELM_RELEASE_SIZE_analyzer_NAMESPACE", "")
+
+	var stdout, stderr bytes.Buffer
+
+	cmd := cli.NewRootCommand(&stdout, &stderr)
+	assert.Nil(t, cmd.PersistentFlags().Lookup("config"))
+
+	chartPath := filepath.Join("..", "helminstall", "testdata", "basic")
+	cmd.SetArgs([]string{"release-json", chartPath, "--release-name", "flags-only"})
+
+	err := cmd.ExecuteContext(context.Background())
+	require.NoError(t, err, stderr.String())
+
+	var got struct {
+		Namespace string `json:"namespace"`
+	}
+
+	err = json.Unmarshal(stdout.Bytes(), &got)
+	require.NoError(t, err, stdout.String())
+	assert.Equal(t, "default", got.Namespace)
 }
