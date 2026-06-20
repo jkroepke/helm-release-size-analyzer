@@ -12,8 +12,9 @@ type Property struct {
 }
 
 type Report struct {
-	Properties []Property `json:"properties"`
-	TotalBytes int        `json:"total_bytes"`
+	Properties      []Property `json:"properties"`
+	TotalBytes      int        `json:"total_bytes"`
+	CompressedBytes int        `json:"compressed_bytes"`
 }
 
 type measuredProperty struct {

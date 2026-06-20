@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"text/tabwriter"
 
 	"github.com/jkroepke/helm-release-size-analyzer/internal/analyze"
@@ -43,7 +44,17 @@ func writeTable(out io.Writer, report analyze.Report) error {
 		return fmt.Errorf("write total size: %w", err)
 	}
 
-	for _, property := range report.Properties {
+	_, err = fmt.Fprintf(writer, "COMPRESSED\t%s\n", humanSize(report.CompressedBytes))
+	if err != nil {
+		return fmt.Errorf("write compressed size: %w", err)
+	}
+
+	properties := slices.Clone(report.Properties)
+	slices.SortStableFunc(properties, func(left, right analyze.Property) int {
+		return right.Bytes - left.Bytes
+	})
+
+	for _, property := range properties {
 		_, err = fmt.Fprintf(writer, "%s\t%s\n", property.Name, humanSize(property.Bytes))
 		if err != nil {
 			return fmt.Errorf("write property %q: %w", property.Name, err)

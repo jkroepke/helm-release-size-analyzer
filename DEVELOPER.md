@@ -82,24 +82,33 @@ state. Do not introduce shared mutable package state.
 
 ## Measurement contract
 
-`total_bytes` is the length of the exact decoded release JSON, including outer
-braces and JSON syntax. Each entry in `properties` reports the exact byte span
-of one top-level property in persisted order, including its encoded key, value,
-whitespace, and delimiter comma. Entries prefixed with `chart.` apply the same
-measurement to each second-level property of `chart`. Outer braces contribute
-only to the total.
+`compressed_bytes` is the length of the decoded Kubernetes Secret value at
+`data.release`, including Helm's base64 encoding of the gzip payload.
+This is the release-data size relevant to Kubernetes' 1,048,576-byte Secret
+limit. `total_bytes` is the length of the exact decoded and decompressed release
+JSON, including outer braces and JSON syntax. Each entry in `properties` reports
+the exact byte span of one top-level property in persisted order, including its
+encoded key, value, whitespace, and delimiter comma. Entries prefixed with
+`chart.` apply the same measurement to each second-level property of `chart`.
+Outer braces contribute only to the total.
 
 The analyzer must not decode and re-encode property values for measurement;
 doing so would change escaping, whitespace, and potentially field ordering.
 The web report extends the same span measurement recursively to every object
 property and array element. Its scalar previews do not affect measurement.
+Array elements whose value is an object expose a display label when their
+`name` property is a string. The label does not affect measurement. The web
+report orders object properties and array elements by decreasing size.
+It displays each size once, using B or kibibyte-based KB as appropriate.
+The table report also orders properties by decreasing size without changing the
+persisted order exposed by the report model and JSON output.
 
 ## Supported behavior and limitations
 
 The current implementation loads local chart directories or packaged charts.
 It supports values files, `--set`, `--set-string`, `--set-file`, optional CRD
 inclusion, table output, JSON output, interactive web output, and raw decoded
-release JSON output.
+release JSON output. The `analyze` command defaults to web output.
 
 The in-memory resource client is intentionally not an API server. It does not
 provide discovery, admission, generated metadata, controllers, server-side

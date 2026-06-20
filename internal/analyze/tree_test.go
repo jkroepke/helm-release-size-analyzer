@@ -37,3 +37,16 @@ func TestBuildTreeValidatedRejectsNonObject(t *testing.T) {
 	_, err := analyze.BuildTreeValidated([]byte(`["release"]`))
 	require.Error(t, err)
 }
+
+func TestBuildTreeValidatedLabelsArrayObjectsByName(t *testing.T) {
+	t.Parallel()
+
+	tree, err := analyze.BuildTreeValidated([]byte(`{"items":[{"name":"first"},{"value":2},{"name":3}]}`))
+	require.NoError(t, err)
+
+	items := tree.Root.Children[0].Children
+	require.Len(t, items, 3)
+	assert.Equal(t, "first", items[0].Label)
+	assert.Empty(t, items[1].Label)
+	assert.Empty(t, items[2].Label)
+}

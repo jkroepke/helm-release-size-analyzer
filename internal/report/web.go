@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"strings"
@@ -18,10 +19,11 @@ import (
 )
 
 const (
-	webDataPlaceholder  = "__HELM_RELEASE_SIZE_ANALYZER_DATA__"
-	webNoncePlaceholder = "__HELM_RELEASE_SIZE_ANALYZER_NONCE__"
-	shutdownTimeout     = 5 * time.Second
-	nonceBytes          = 18
+	webDataPlaceholder    = "__HELM_RELEASE_SIZE_ANALYZER_DATA__"
+	webNoncePlaceholder   = "__HELM_RELEASE_SIZE_ANALYZER_NONCE__"
+	webVersionPlaceholder = "__HELM_RELEASE_SIZE_ANALYZER_VERSION__"
+	shutdownTimeout       = 5 * time.Second
+	nonceBytes            = 18
 )
 
 //go:embed web.html
@@ -29,8 +31,8 @@ var webPage string
 
 // ServeWeb serves an interactive report on a random loopback port until the
 // context is canceled or the user stops the server from the page.
-func ServeWeb(ctx context.Context, tree analyze.Tree, ready func(string)) error {
-	page, nonce, err := renderWebPage(tree)
+func ServeWeb(ctx context.Context, tree analyze.Tree, version string, ready func(string)) error {
+	page, nonce, err := renderWebPage(tree, version)
 	if err != nil {
 		return err
 	}
@@ -84,7 +86,7 @@ func OpenBrowser(url string) error {
 	return nil
 }
 
-func renderWebPage(tree analyze.Tree) (string, string, error) {
+func renderWebPage(tree analyze.Tree, version string) (string, string, error) {
 	data, err := json.Marshal(tree)
 	if err != nil {
 		return "", "", fmt.Errorf("encode web report: %w", err)
@@ -98,8 +100,17 @@ func renderWebPage(tree analyze.Tree) (string, string, error) {
 	encoded := base64.StdEncoding.EncodeToString(data)
 	page := strings.Replace(webPage, webDataPlaceholder, encoded, 1)
 	page = strings.ReplaceAll(page, webNoncePlaceholder, nonce)
+	page = strings.Replace(page, webVersionPlaceholder, html.EscapeString(prefixedVersion(version)), 1)
 
 	return page, nonce, nil
+}
+
+func prefixedVersion(version string) string {
+	if strings.HasPrefix(version, "v") {
+		return version
+	}
+
+	return "v" + version
 }
 
 func generateNonce() (string, error) {

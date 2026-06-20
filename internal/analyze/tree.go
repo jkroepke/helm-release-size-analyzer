@@ -12,6 +12,7 @@ const maxPreviewRunes = 160
 // TreeNode describes one recursively measured JSON property or array element.
 type TreeNode struct {
 	Name     string     `json:"name"`
+	Label    string     `json:"label,omitempty"`
 	Kind     string     `json:"kind"`
 	Preview  string     `json:"preview,omitempty"`
 	Children []TreeNode `json:"children,omitempty"`
@@ -20,7 +21,8 @@ type TreeNode struct {
 
 // Tree is the recursively measured representation used by the web report.
 type Tree struct {
-	Root TreeNode `json:"root"`
+	Root            TreeNode `json:"root"`
+	CompressedBytes int      `json:"compressed_bytes"`
 }
 
 // BuildTreeValidated recursively measures release JSON that the caller has
@@ -173,7 +175,23 @@ func measureArrayElement(data []byte, elementStart, index int) (TreeNode, int, b
 		return TreeNode{}, 0, false, fmt.Errorf("measure array element %d: %w", index, err)
 	}
 
+	child.Label = arrayElementLabel(child)
+
 	return child, cursor, done, nil
+}
+
+func arrayElementLabel(node TreeNode) string {
+	if node.Kind != "object" {
+		return ""
+	}
+
+	for _, property := range node.Children {
+		if property.Name == "name" && property.Kind == "string" {
+			return property.Preview
+		}
+	}
+
+	return ""
 }
 
 func stringPreview(data []byte) (string, error) {

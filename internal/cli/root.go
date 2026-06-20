@@ -22,7 +22,7 @@ func ExitCode(_ error) int {
 }
 
 // NewRootCommand constructs the CLI command tree with the provided output streams.
-func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
+func NewRootCommand(args []string, stdout, stderr io.Writer) *cobra.Command {
 	var logLevel, logFormat string
 
 	root := &cobra.Command{
@@ -32,12 +32,13 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
+	root.SetArgs(args)
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level: debug, info, warn, error")
 	root.PersistentFlags().StringVar(&logFormat, "log-format", "text", "log format: text or json")
 
-	analyzeConfig := config.Config{Namespace: "default", Output: "table"}
+	analyzeConfig := config.Config{Namespace: "default", Output: "web"}
 
 	analyzeCmd := &cobra.Command{
 		Use:   "analyze CHART",
@@ -62,7 +63,10 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 				return fmt.Errorf("decode release JSON: %w", err)
 			}
 
-			return writeAnalysis(cmd.Context(), stdout, logger, cfg.Output, releaseJSON)
+			return writeAnalysis(
+				cmd.Context(), stdout, logger, cfg.Output, releaseJSON,
+				len(installed.Secret.Data["release"]),
+			)
 		},
 	}
 	addInstallFlags(analyzeCmd, &analyzeConfig)
@@ -109,9 +113,16 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	return root
 }
 
-func writeAnalysis(ctx context.Context, out io.Writer, logger *slog.Logger, format string, releaseJSON []byte) error {
+func writeAnalysis(
+	ctx context.Context,
+	out io.Writer,
+	logger *slog.Logger,
+	format string,
+	releaseJSON []byte,
+	compressedBytes int,
+) error {
 	if format == "web" {
-		return serveWebReport(ctx, logger, releaseJSON)
+		return serveWebReport(ctx, logger, releaseJSON, compressedBytes)
 	}
 
 	// DecodeJSON validates the payload before returning it.
@@ -119,6 +130,8 @@ func writeAnalysis(ctx context.Context, out io.Writer, logger *slog.Logger, form
 	if err != nil {
 		return fmt.Errorf("analyze release: %w", err)
 	}
+
+	result.CompressedBytes = compressedBytes
 
 	err = report.Write(out, format, result)
 	if err != nil {
@@ -128,13 +141,15 @@ func writeAnalysis(ctx context.Context, out io.Writer, logger *slog.Logger, form
 	return nil
 }
 
-func serveWebReport(ctx context.Context, logger *slog.Logger, releaseJSON []byte) error {
+func serveWebReport(ctx context.Context, logger *slog.Logger, releaseJSON []byte, compressedBytes int) error {
 	tree, err := analyze.BuildTreeValidated(releaseJSON)
 	if err != nil {
 		return fmt.Errorf("analyze release tree: %w", err)
 	}
 
-	err = report.ServeWeb(ctx, tree, func(url string) {
+	tree.CompressedBytes = compressedBytes
+
+	err = report.ServeWeb(ctx, tree, version.Version, func(url string) {
 		logger.InfoContext(ctx, "web report ready", slog.String("url", url))
 
 		browserErr := report.OpenBrowser(url)
