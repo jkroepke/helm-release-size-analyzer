@@ -37,7 +37,6 @@ The decoded size isn't the size of the encoded Kubernetes Secret object.
 - Produces human-readable table output, machine-readable JSON, or an
   interactive web report.
 - Prints the uncompressed release JSON for further inspection.
-- Keeps logs on stderr and non-web report data on stdout.
 
 ## Quick start
 
