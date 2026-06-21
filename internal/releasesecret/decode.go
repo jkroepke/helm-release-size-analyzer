@@ -14,7 +14,7 @@ import (
 const gzipHeader = "\x1f\x8b\x08"
 
 // DecodeJSON returns the exact JSON bytes stored in a Helm release Secret,
-// after removing Helm's base64 and optional gzip storage encoding.
+// after removing Helm's base64 and gzip storage encoding.
 func DecodeJSON(secret *corev1.Secret) ([]byte, error) {
 	if secret == nil {
 		return nil, errNilSecret
@@ -30,22 +30,24 @@ func DecodeJSON(secret *corev1.Secret) ([]byte, error) {
 		return nil, fmt.Errorf("decode Helm release payload: %w", err)
 	}
 
-	if bytes.HasPrefix(decoded, []byte(gzipHeader)) {
-		reader, err := gzip.NewReader(bytes.NewReader(decoded))
-		if err != nil {
-			return nil, fmt.Errorf("open Helm release payload: %w", err)
-		}
+	if !bytes.HasPrefix(decoded, []byte(gzipHeader)) {
+		return nil, fmt.Errorf("%w: %q", errNotCompressed, secret.Name)
+	}
 
-		decoded, err = io.ReadAll(reader)
-		closeErr := reader.Close()
+	reader, err := gzip.NewReader(bytes.NewReader(decoded))
+	if err != nil {
+		return nil, fmt.Errorf("open Helm release payload: %w", err)
+	}
 
-		if err != nil {
-			return nil, fmt.Errorf("decompress Helm release payload: %w", err)
-		}
+	decoded, err = io.ReadAll(reader)
+	closeErr := reader.Close()
 
-		if closeErr != nil {
-			return nil, fmt.Errorf("close Helm release payload: %w", closeErr)
-		}
+	if err != nil {
+		return nil, fmt.Errorf("decompress Helm release payload: %w", err)
+	}
+
+	if closeErr != nil {
+		return nil, fmt.Errorf("close Helm release payload: %w", closeErr)
 	}
 
 	if !json.Valid(decoded) {

@@ -50,7 +50,7 @@ boundaries; the report contract remains owned by `internal/analyze`.
    validation disabled.
 7. The installer selects the expected release revision from fake Secret
    storage and returns a deep copy.
-8. `internal/releasesecret` removes Helm's base64 and optional gzip encoding
+8. `internal/releasesecret` removes Helm's base64 and gzip encoding
    and validates the resulting JSON.
 9. `internal/analyze` measures the original decoded bytes without re-encoding
    them.
@@ -127,8 +127,8 @@ Tests should protect behavior at the narrowest useful boundary:
   `internal/helminstall`;
 - fixture charts covering dependencies, CRDs, hooks, large or binary files,
   schema errors, and unsupported live-cluster behavior;
-- compressed, uncompressed, missing, and malformed payloads in
-  `internal/releasesecret`;
+- valid compressed payloads and rejection of uncompressed, missing, and
+  malformed payloads in `internal/releasesecret`;
 - exact byte attribution for whitespace, escaped keys, empty objects, nested
   values, and trailing data in `internal/analyze`;
 - deterministic output, stream errors, unsupported formats, recursive web
