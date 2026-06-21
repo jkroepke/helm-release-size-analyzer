@@ -72,7 +72,7 @@ func Install(ctx context.Context, chartPath string, cfg config.Config, logger *s
 	install.DisableHooks = true
 	install.DisableOpenAPIValidation = true
 	install.IncludeCRDs = cfg.IncludeCRDs
-	// CRDs are included in the persisted manifest when requested, but must not
+	// CRDs are included in the persisted manifest when requested but must not
 	// be installed through the in-memory resource client.
 	install.SkipCRDs = true
 	install.WaitStrategy = kube.HookOnlyStrategy

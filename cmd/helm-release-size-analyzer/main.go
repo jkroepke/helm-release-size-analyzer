@@ -20,7 +20,7 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	cmd := cli.NewRootCommand(os.Stdout, os.Stderr)
+	cmd := cli.NewRootCommand(os.Args[1:], os.Stdout, os.Stderr)
 	if err := cmd.ExecuteContext(ctx); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 

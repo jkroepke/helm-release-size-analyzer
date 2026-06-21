@@ -12,8 +12,9 @@ type Property struct {
 }
 
 type Report struct {
-	Properties []Property `json:"properties"`
-	TotalBytes int        `json:"total_bytes"`
+	Properties      []Property `json:"properties"`
+	TotalBytes      int        `json:"total_bytes"`
+	CompressedBytes int        `json:"compressed_bytes"`
 }
 
 type measuredProperty struct {
@@ -55,38 +56,26 @@ func measureProperties(data []byte) ([]Property, error) {
 
 // measureObjectProperties measures each property in an encoded JSON object.
 func measureObjectProperties(data []byte, prefix string, includeChartChildren bool) ([]Property, error) {
-	cursor := skipWhitespace(data, 0)
-	if cursor >= len(data) || data[cursor] != '{' {
-		return nil, errTopLevelObject
+	measuredProperties, err := measureObjectSpans(data)
+	if err != nil {
+		return nil, err
 	}
 
-	cursor++
 	properties := make([]Property, 0)
 
-	for {
-		measured, next, done, err := measureProperty(data, cursor)
-		if err != nil {
-			return nil, err
+	for _, measured := range measuredProperties {
+		measured.Name = prefix + measured.Name
+		properties = append(properties, measured.Property)
+
+		children, childErr := measureChartProperties(data, measured, includeChartChildren)
+		if childErr != nil {
+			return nil, childErr
 		}
 
-		if measured.Bytes > 0 {
-			measured.Name = prefix + measured.Name
-			properties = append(properties, measured.Property)
-
-			children, childErr := measureChartProperties(data, measured, includeChartChildren)
-			if childErr != nil {
-				return nil, childErr
-			}
-
-			properties = append(properties, children...)
-		}
-
-		if done {
-			return properties, nil
-		}
-
-		cursor = next
+		properties = append(properties, children...)
 	}
+
+	return properties, nil
 }
 
 // measureChartProperties measures direct children when measured is the top-level chart object.
@@ -109,6 +98,34 @@ func measureChartProperties(
 	}
 
 	return properties, nil
+}
+
+// measureObjectSpans locates every property span in an encoded JSON object.
+func measureObjectSpans(data []byte) ([]measuredProperty, error) {
+	cursor := skipWhitespace(data, 0)
+	if cursor >= len(data) || data[cursor] != '{' {
+		return nil, errTopLevelObject
+	}
+
+	cursor++
+	properties := make([]measuredProperty, 0)
+
+	for {
+		measured, next, done, err := measureProperty(data, cursor)
+		if err != nil {
+			return nil, err
+		}
+
+		if measured.Bytes > 0 {
+			properties = append(properties, measured)
+		}
+
+		if done {
+			return properties, nil
+		}
+
+		cursor = next
+	}
 }
 
 // measureProperty measures one encoded property and locates the following property.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -19,15 +20,15 @@ func (shortWriter) Write(data []byte) (int, error) {
 	return len(data) - 1, nil
 }
 
-func TestAnalyseCommandJSON(t *testing.T) {
+func TestAnalyzeCommandJSON(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr bytes.Buffer
 
-	cmd := cli.NewRootCommand(&stdout, &stderr)
+	cmd := cli.NewRootCommand(os.Args[1:], &stdout, &stderr)
 	chartPath := filepath.Join("..", "helminstall", "testdata", "basic")
 	cmd.SetArgs([]string{
-		"analyse", chartPath,
+		"analyze", chartPath,
 		"--release-name", "cli-test",
 		"--set", "message=from-cli",
 		"--output", "json",
@@ -41,6 +42,7 @@ func TestAnalyseCommandJSON(t *testing.T) {
 	err = json.Unmarshal(stdout.Bytes(), &got)
 	require.NoError(t, err, stdout.String())
 	assert.NotZero(t, got.TotalBytes)
+	assert.NotZero(t, got.CompressedBytes)
 	require.NotEmpty(t, got.Properties)
 	assert.Equal(t, "name", got.Properties[0].Name)
 
@@ -57,17 +59,33 @@ func TestAnalyseCommandJSON(t *testing.T) {
 	assert.Positive(t, chartValuesBytes)
 }
 
-func TestAnalyseCommandRejectsYAML(t *testing.T) {
+func TestAnalyzeCommandDefaultsToWebOutput(t *testing.T) {
+	t.Parallel()
+
+	cmd := cli.NewRootCommand(nil, &bytes.Buffer{}, &bytes.Buffer{})
+
+	for _, subcommand := range cmd.Commands() {
+		if subcommand.Name() == "analyze" {
+			assert.Equal(t, "web", subcommand.Flags().Lookup("output").DefValue)
+
+			return
+		}
+	}
+
+	t.Fatal("analyze command not found")
+}
+
+func TestAnalyzeCommandRejectsYAML(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr bytes.Buffer
 
-	cmd := cli.NewRootCommand(&stdout, &stderr)
+	cmd := cli.NewRootCommand(os.Args[1:], &stdout, &stderr)
 	chartPath := filepath.Join("..", "helminstall", "testdata", "basic")
-	cmd.SetArgs([]string{"analyse", chartPath, "--output", "yaml"})
+	cmd.SetArgs([]string{"analyze", chartPath, "--output", "yaml"})
 
 	err := cmd.ExecuteContext(context.Background())
-	require.EqualError(t, err, "invalid configuration: output must be one of table or json")
+	require.EqualError(t, err, "invalid configuration: output must be one of table, json, or web")
 }
 
 func TestReleaseJSONCommand(t *testing.T) {
@@ -75,7 +93,7 @@ func TestReleaseJSONCommand(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	cmd := cli.NewRootCommand(&stdout, &stderr)
+	cmd := cli.NewRootCommand(os.Args[1:], &stdout, &stderr)
 	chartPath := filepath.Join("..", "helminstall", "testdata", "basic")
 	cmd.SetArgs([]string{
 		"release-json", chartPath,
@@ -106,7 +124,7 @@ func TestReleaseJSONCommandRejectsShortWrite(t *testing.T) {
 
 	var stderr bytes.Buffer
 
-	cmd := cli.NewRootCommand(shortWriter{}, &stderr)
+	cmd := cli.NewRootCommand(os.Args[1:], shortWriter{}, &stderr)
 	chartPath := filepath.Join("..", "helminstall", "testdata", "basic")
 	cmd.SetArgs([]string{"release-json", chartPath, "--release-name", "short-write"})
 
@@ -119,7 +137,7 @@ func TestVersionCommand(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	cmd := cli.NewRootCommand(&stdout, &stderr)
+	cmd := cli.NewRootCommand(os.Args[1:], &stdout, &stderr)
 	cmd.SetArgs([]string{"--version"})
 
 	err := cmd.ExecuteContext(context.Background())
@@ -134,7 +152,7 @@ func TestConfigurationSourcesAreFlagsOnly(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	cmd := cli.NewRootCommand(&stdout, &stderr)
+	cmd := cli.NewRootCommand(os.Args[1:], &stdout, &stderr)
 	assert.Nil(t, cmd.PersistentFlags().Lookup("config"))
 
 	chartPath := filepath.Join("..", "helminstall", "testdata", "basic")

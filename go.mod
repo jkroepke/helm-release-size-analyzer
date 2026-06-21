@@ -3,6 +3,7 @@ module github.com/jkroepke/helm-release-size-analyzer
 go 1.26.0
 
 require (
+	github.com/cli/browser v1.3.1-0.20260619211148-d64b903fe68c
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	helm.sh/helm/v4 v4.2.2

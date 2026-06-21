@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,29 +22,30 @@ func ExitCode(_ error) int {
 }
 
 // NewRootCommand constructs the CLI command tree with the provided output streams.
-func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
+func NewRootCommand(args []string, stdout, stderr io.Writer) *cobra.Command {
 	var logLevel, logFormat string
 
 	root := &cobra.Command{
 		Use:           "helm-release-size-analyzer",
-		Short:         "Analyse the JSON stored in a Helm release Secret",
+		Short:         "Analyze the JSON stored in a Helm release Secret",
 		Version:       version.String(),
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
+	root.SetArgs(args)
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level: debug, info, warn, error")
 	root.PersistentFlags().StringVar(&logFormat, "log-format", "text", "log format: text or json")
 
-	analyseConfig := config.Config{Namespace: "default", Output: "table"}
+	analyzeConfig := config.Config{Namespace: "default", Output: "web"}
 
-	analyseCmd := &cobra.Command{
-		Use:   "analyse CHART",
-		Short: "Install a chart in memory and analyse its Helm release Secret",
+	analyzeCmd := &cobra.Command{
+		Use:   "analyze CHART",
+		Short: "Install a chart in memory and analyze its Helm release Secret",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := validatedConfig(analyseConfig, logLevel, logFormat)
+			cfg, err := validatedConfig(analyzeConfig, logLevel, logFormat)
 			if err != nil {
 				return err
 			}
@@ -51,33 +53,17 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 			logger := newLogger(stderr, cfg.LogLevel, cfg.LogFormat)
 			logger.Debug("starting analysis", slog.String("chart", args[0]))
 
-			installed, err := helminstall.Install(cmd.Context(), args[0], cfg, logger)
+			releaseJSON, compressedBytes, err := installReleaseJSON(cmd.Context(), args[0], cfg, logger)
 			if err != nil {
-				return fmt.Errorf("install chart: %w", err)
+				return err
 			}
 
-			releaseJSON, err := releasesecret.DecodeJSON(installed.Secret)
-			if err != nil {
-				return fmt.Errorf("decode release JSON: %w", err)
-			}
-
-			// DecodeJSON validates the payload before returning it.
-			result, err := analyze.BuildValidated(releaseJSON)
-			if err != nil {
-				return fmt.Errorf("analyse release: %w", err)
-			}
-
-			err = report.Write(stdout, cfg.Output, result)
-			if err != nil {
-				return fmt.Errorf("write report: %w", err)
-			}
-
-			return nil
+			return writeAnalysis(cmd.Context(), stdout, logger, cfg.Output, releaseJSON, compressedBytes)
 		},
 	}
-	addInstallFlags(analyseCmd, &analyseConfig)
-	flags := analyseCmd.Flags()
-	flags.StringVarP(&analyseConfig.Output, "output", "o", analyseConfig.Output, "output format: table or json")
+	addInstallFlags(analyzeCmd, &analyzeConfig)
+	flags := analyzeCmd.Flags()
+	flags.StringVarP(&analyzeConfig.Output, "output", "o", analyzeConfig.Output, "output format: table, json, or web")
 
 	releaseJSONConfig := config.Config{Namespace: "default", Output: "table"}
 
@@ -94,14 +80,9 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 			logger := newLogger(stderr, cfg.LogLevel, cfg.LogFormat)
 			logger.Debug("generating release JSON", slog.String("chart", args[0]))
 
-			installed, err := helminstall.Install(cmd.Context(), args[0], cfg, logger)
+			releaseJSON, _, err := installReleaseJSON(cmd.Context(), args[0], cfg, logger)
 			if err != nil {
-				return fmt.Errorf("install chart: %w", err)
-			}
-
-			releaseJSON, err := releasesecret.DecodeJSON(installed.Secret)
-			if err != nil {
-				return fmt.Errorf("decode release JSON: %w", err)
+				return err
 			}
 
 			err = writeReleaseJSON(stdout, releaseJSON)
@@ -114,9 +95,83 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	}
 	addInstallFlags(releaseJSONCmd, &releaseJSONConfig)
 
-	root.AddCommand(analyseCmd, releaseJSONCmd)
+	root.AddCommand(analyzeCmd, releaseJSONCmd)
 
 	return root
+}
+
+// installReleaseJSON installs a chart and returns its decoded release JSON and
+// the stored Secret payload size.
+func installReleaseJSON(
+	ctx context.Context,
+	chartPath string,
+	cfg config.Config,
+	logger *slog.Logger,
+) ([]byte, int, error) {
+	installed, err := helminstall.Install(ctx, chartPath, cfg, logger)
+	if err != nil {
+		return nil, 0, fmt.Errorf("install chart: %w", err)
+	}
+
+	releaseJSON, err := releasesecret.DecodeJSON(installed.Secret)
+	if err != nil {
+		return nil, 0, fmt.Errorf("decode release JSON: %w", err)
+	}
+
+	return releaseJSON, len(installed.Secret.Data["release"]), nil
+}
+
+func writeAnalysis(
+	ctx context.Context,
+	out io.Writer,
+	logger *slog.Logger,
+	format string,
+	releaseJSON []byte,
+	compressedBytes int,
+) error {
+	if format == "web" {
+		return serveWebReport(ctx, logger, releaseJSON, compressedBytes)
+	}
+
+	// DecodeJSON validates the payload before returning it.
+	result, err := analyze.BuildValidated(releaseJSON)
+	if err != nil {
+		return fmt.Errorf("analyze release: %w", err)
+	}
+
+	result.CompressedBytes = compressedBytes
+
+	err = report.Write(out, format, result)
+	if err != nil {
+		return fmt.Errorf("write report: %w", err)
+	}
+
+	return nil
+}
+
+func serveWebReport(ctx context.Context, logger *slog.Logger, releaseJSON []byte, compressedBytes int) error {
+	tree, err := analyze.BuildTreeValidated(releaseJSON)
+	if err != nil {
+		return fmt.Errorf("analyze release tree: %w", err)
+	}
+
+	tree.CompressedBytes = compressedBytes
+
+	err = report.ServeWeb(ctx, tree, version.Version, func(url string) {
+		logger.InfoContext(ctx, "web report ready", slog.String("url", url))
+
+		go func() {
+			browserErr := report.OpenBrowser(url)
+			if browserErr != nil {
+				logger.WarnContext(ctx, "could not open browser", slog.Any("error", browserErr))
+			}
+		}()
+	})
+	if err != nil {
+		return fmt.Errorf("serve web report: %w", err)
+	}
+
+	return nil
 }
 
 // writeReleaseJSON writes the complete release payload or reports a short write.

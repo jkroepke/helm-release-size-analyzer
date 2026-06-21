@@ -32,7 +32,7 @@ archives:
   - id: helm-release-size-analyzer
     ids:
       - helm-release-size-analyzer
-    formats: ['tar.xz']
+    formats: ['tar.zst']
     files:
       - LICENSE.txt
 
