@@ -53,20 +53,12 @@ func NewRootCommand(args []string, stdout, stderr io.Writer) *cobra.Command {
 			logger := newLogger(stderr, cfg.LogLevel, cfg.LogFormat)
 			logger.Debug("starting analysis", slog.String("chart", args[0]))
 
-			installed, err := helminstall.Install(cmd.Context(), args[0], cfg, logger)
+			releaseJSON, compressedBytes, err := installReleaseJSON(cmd.Context(), args[0], cfg, logger)
 			if err != nil {
-				return fmt.Errorf("install chart: %w", err)
+				return err
 			}
 
-			releaseJSON, err := releasesecret.DecodeJSON(installed.Secret)
-			if err != nil {
-				return fmt.Errorf("decode release JSON: %w", err)
-			}
-
-			return writeAnalysis(
-				cmd.Context(), stdout, logger, cfg.Output, releaseJSON,
-				len(installed.Secret.Data["release"]),
-			)
+			return writeAnalysis(cmd.Context(), stdout, logger, cfg.Output, releaseJSON, compressedBytes)
 		},
 	}
 	addInstallFlags(analyzeCmd, &analyzeConfig)
@@ -88,14 +80,9 @@ func NewRootCommand(args []string, stdout, stderr io.Writer) *cobra.Command {
 			logger := newLogger(stderr, cfg.LogLevel, cfg.LogFormat)
 			logger.Debug("generating release JSON", slog.String("chart", args[0]))
 
-			installed, err := helminstall.Install(cmd.Context(), args[0], cfg, logger)
+			releaseJSON, _, err := installReleaseJSON(cmd.Context(), args[0], cfg, logger)
 			if err != nil {
-				return fmt.Errorf("install chart: %w", err)
-			}
-
-			releaseJSON, err := releasesecret.DecodeJSON(installed.Secret)
-			if err != nil {
-				return fmt.Errorf("decode release JSON: %w", err)
+				return err
 			}
 
 			err = writeReleaseJSON(stdout, releaseJSON)
@@ -111,6 +98,27 @@ func NewRootCommand(args []string, stdout, stderr io.Writer) *cobra.Command {
 	root.AddCommand(analyzeCmd, releaseJSONCmd)
 
 	return root
+}
+
+// installReleaseJSON installs a chart and returns its decoded release JSON and
+// the stored Secret payload size.
+func installReleaseJSON(
+	ctx context.Context,
+	chartPath string,
+	cfg config.Config,
+	logger *slog.Logger,
+) ([]byte, int, error) {
+	installed, err := helminstall.Install(ctx, chartPath, cfg, logger)
+	if err != nil {
+		return nil, 0, fmt.Errorf("install chart: %w", err)
+	}
+
+	releaseJSON, err := releasesecret.DecodeJSON(installed.Secret)
+	if err != nil {
+		return nil, 0, fmt.Errorf("decode release JSON: %w", err)
+	}
+
+	return releaseJSON, len(installed.Secret.Data["release"]), nil
 }
 
 func writeAnalysis(
@@ -152,10 +160,12 @@ func serveWebReport(ctx context.Context, logger *slog.Logger, releaseJSON []byte
 	err = report.ServeWeb(ctx, tree, version.Version, func(url string) {
 		logger.InfoContext(ctx, "web report ready", slog.String("url", url))
 
-		browserErr := report.OpenBrowser(url)
-		if browserErr != nil {
-			logger.WarnContext(ctx, "could not open browser", slog.Any("error", browserErr))
-		}
+		go func() {
+			browserErr := report.OpenBrowser(url)
+			if browserErr != nil {
+				logger.WarnContext(ctx, "could not open browser", slog.Any("error", browserErr))
+			}
+		}()
 	})
 	if err != nil {
 		return fmt.Errorf("serve web report: %w", err)

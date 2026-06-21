@@ -70,7 +70,14 @@ func ServeWeb(ctx context.Context, tree analyze.Tree, version string, ready func
 
 	err = server.Shutdown(shutdownCtx)
 	if err != nil {
-		return fmt.Errorf("shut down web report: %w", err)
+		shutdownErr := fmt.Errorf("shut down web report: %w", err)
+
+		closeErr := server.Close()
+		if closeErr != nil {
+			return errors.Join(shutdownErr, fmt.Errorf("close web report: %w", closeErr))
+		}
+
+		return shutdownErr
 	}
 
 	return nil

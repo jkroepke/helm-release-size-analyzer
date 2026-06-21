@@ -77,19 +77,13 @@ func buildTreeNode(name string, value []byte, size int) (TreeNode, error) {
 }
 
 func buildObjectChildren(data []byte) ([]TreeNode, error) {
-	cursor := 1
-	children := make([]TreeNode, 0)
+	measuredProperties, err := measureObjectSpans(data)
+	if err != nil {
+		return nil, err
+	}
 
-	for {
-		measured, next, done, err := measureProperty(data, cursor)
-		if err != nil {
-			return nil, err
-		}
-
-		if measured.Bytes == 0 {
-			return children, nil
-		}
-
+	children := make([]TreeNode, 0, len(measuredProperties))
+	for _, measured := range measuredProperties {
 		child, err := buildTreeNode(
 			measured.Name,
 			data[measured.valueStart:measured.valueEnd],
@@ -100,12 +94,9 @@ func buildObjectChildren(data []byte) ([]TreeNode, error) {
 		}
 
 		children = append(children, child)
-		if done {
-			return children, nil
-		}
-
-		cursor = next
 	}
+
+	return children, nil
 }
 
 func buildArrayChildren(data []byte) ([]TreeNode, error) {
