@@ -1,6 +1,6 @@
 module github.com/jkroepke/helm-release-size-analyzer
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/cli/browser v1.3.1-0.20260622202203-d2c9f103b8c7
